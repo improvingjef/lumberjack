@@ -1,0 +1,65 @@
+{
+  "name": "lumberjack",
+  "displayName": "Lumberjack",
+  "description": "A glance tool for your git worktree fleet — colored-square status at a glance, drill into commits and files, with native diff and source.",
+  "version": "0.0.1",
+  "publisher": "improvingjef",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/improvingjef/lumberjack.git"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "SCM Providers",
+    "Visualization",
+    "Other"
+  ],
+  "keywords": [
+    "git",
+    "worktree",
+    "branches",
+    "dashboard"
+  ],
+  "activationEvents": [],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "lumberjack.open",
+        "title": "Lumberjack: Open Worktree Fleet"
+      },
+      {
+        "command": "lumberjack.refresh",
+        "title": "Lumberjack: Refresh Fleet"
+      }
+    ],
+    "configuration": {
+      "title": "Lumberjack",
+      "properties": {
+        "lumberjack.repoPath": {
+          "type": "string",
+          "default": "",
+          "description": "Absolute path to the git repo whose worktree fleet to survey. Empty = the first workspace folder."
+        },
+        "lumberjack.commitWindow": {
+          "type": "number",
+          "default": 14,
+          "description": "How many recent commits to render as squares per row."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "typescript": "^5.4.0"
+  }
+}
