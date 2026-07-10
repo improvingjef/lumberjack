@@ -136,6 +136,25 @@ export function activate(context: vscode.ExtensionContext) {
     await refresh(targets());
   }
 
+  async function landOne(m: any) {
+    const repo = repoRoot();
+    if (!repo) return;
+    const res = await ops.land(repo, m.branch, trunkOpt());
+    if (res.ok) vscode.window.showInformationMessage(`⬆ ${res.message}`);
+    else vscode.window.showWarningMessage(`Couldn't land ${m.name}: ${res.message}`);
+    await refresh(targets());
+  }
+
+  async function landGroup(m: any) {
+    const repo = repoRoot();
+    if (!repo) return;
+    const branches = ((m.trees ?? []) as ops.TreeRef[]).map((t) => t.branch).filter(Boolean);
+    if (!branches.length) return;
+    const { landed, skipped } = await ops.landMany(repo, branches, trunkOpt());
+    vscode.window.showInformationMessage(`Landed ${landed.length}${skipped.length ? `, skipped ${skipped.length} (diverged)` : ""}`);
+    await refresh(targets());
+  }
+
   // Fell-all deadwood: one confirm, felled together, one Undo restores them all.
   async function fellGroup(m: any) {
     const repo = repoRoot();
@@ -203,6 +222,8 @@ export function activate(context: vscode.ExtensionContext) {
       if (msg.type === "salvage") return salvageOnly(msg);
       if (msg.type === "salvageGroup") return salvageGroup(msg);
       if (msg.type === "fellGroup") return fellGroup(msg);
+      if (msg.type === "land") return landOne(msg);
+      if (msg.type === "landGroup") return landGroup(msg);
     };
   }
 
@@ -227,6 +248,21 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand("lumberjack.refresh", () => refresh(targets())));
+
+  // Compare two worktrees — judge rival solutions to the same problem.
+  context.subscriptions.push(vscode.commands.registerCommand("lumberjack.compare", async () => {
+    const repo = repoRoot();
+    if (!repo) return;
+    const { worktrees } = await gatherWorktrees(repo, { window: 1, maxFiles: 0, trunk: trunkOpt() });
+    const items = worktrees.filter((w) => w.branch && w.branch !== "(detached)").map((w) => ({ label: w.name, description: w.branch, branch: w.branch }));
+    const a = await vscode.window.showQuickPick(items, { placeHolder: "Compare — first worktree" });
+    if (!a) return;
+    const b = await vscode.window.showQuickPick(items.filter((i) => i.branch !== a.branch), { placeHolder: `Compare ${a.label} with…` });
+    if (!b) return;
+    const res = await ops.compareStat(repo, a.branch, b.branch);
+    const doc = await vscode.workspace.openTextDocument({ content: `${a.label}  …vs…  ${b.label}\n\n${res.raw || "(identical)"}\n`, language: "diff" });
+    await vscode.window.showTextDocument(doc, { preview: true });
+  }));
 
   // ---- ambient status tile ----
   updateStatus();

@@ -16,6 +16,7 @@ import { execFile } from "child_process";
 import { gatherFleet, Row } from "./git";
 import { fleetJson, whoHas, attachClaims } from "./core";
 import { readClaims, setClaim, clearClaim } from "./manifest";
+import * as ops from "./ops";
 
 const C = {
   reset: "\x1b[0m", dim: "\x1b[2m", bold: "\x1b[1m",
@@ -116,6 +117,18 @@ async function cmdStatus(repo: string, json = false) {
   );
 }
 
+async function cmdLand(repo: string, branch: string | undefined) {
+  if (!branch) { console.error("lj land <branch>"); process.exit(1); }
+  const res = await ops.land(repo, branch);
+  console.log(res.ok ? `  ⬆ ${res.message}` : `  ✗ ${res.message}`);
+}
+
+async function cmdCompare(repo: string, a: string | undefined, b: string | undefined) {
+  if (!a || !b) { console.error("lj compare <a> <b>"); process.exit(1); }
+  const res = await ops.compareStat(repo, a, b);
+  console.log("\n" + (res.raw || "  (identical)") + "\n");
+}
+
 async function cmdClaim(cwd: string, note: string | undefined, clear: boolean) {
   const top = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
   if (!top) { console.error("lj: not inside a git worktree"); process.exit(1); }
@@ -203,6 +216,8 @@ ${C.bold}🪓 lj${C.reset} — tend your git worktree fleet
   ${C.bold}lj fell${C.reset}             preview the deadwood (landed + clean worktrees)
   ${C.bold}lj fell --go${C.reset}        fell them (remove worktree + delete merged branch)
   ${C.bold}lj fell --brush${C.reset}     also fell trees tangled only in untracked brush
+  ${C.bold}lj land <branch>${C.reset}    fast-forward the trunk to a ready branch
+  ${C.bold}lj compare <a> <b>${C.reset}  diffstat between two branches/worktrees
   ${C.bold}lj -C <path>${C.reset}        operate on another repo (default: cwd's repo)
   ${C.bold}lj help${C.reset}             this
 
@@ -232,6 +247,8 @@ async function main() {
   }
   if (cmd === "claim") return cmdClaim(cwd, positional[1], flags.has("--clear"));
   if (cmd === "claims") return cmdClaims(repo, json);
+  if (cmd === "land") return cmdLand(repo, positional[1]);
+  if (cmd === "compare") return cmdCompare(repo, positional[1], positional[2]);
   if (cmd === "fell") return cmdFell(repo, flags.has("--go"), flags.has("--brush") || flags.has("--untracked-ok"));
   console.error(`lj: unknown command '${cmd}'. Try 'lj help'.`);
   process.exit(1);

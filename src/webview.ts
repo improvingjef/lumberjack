@@ -112,6 +112,7 @@ function rowEl(r,gid){
   const claim = r.claim ? '<span class="claim" title="'+esc(r.claim)+'">📌</span>' : '';
   const acts = gid==='w' ? '<span class="acts">'
     + '<span class="act" data-a="open" title="open the worktree">↗</span>'
+    + (r.group==='needs' ? '<span class="act" data-a="land" title="land — ff-merge to trunk">⬆</span>' : '')
     + (r.dirty ? '<span class="act" data-a="salvage" title="park WIP to the salvage branch">💾</span>' : '')
     + '<span class="act" data-a="fell" title="fell (f)">🪓</span>'
     + '</span>' : '';
@@ -121,6 +122,7 @@ function rowEl(r,gid){
     const k=a.dataset.a;
     if(k==='fell') fellRow(r);
     else if(k==='salvage') vscode.postMessage({type:'salvage',path:r.path,name:r.name});
+    else if(k==='land') vscode.postMessage({type:'land',branch:r.branch,name:r.name,path:r.path});
     else if(k==='open') diveRow(r);});
   if(pendingRise===r.path){el.classList.add('rising');pendingRise=null;}
   return el;
@@ -134,7 +136,8 @@ function section(title,key,rows,dotColor,gid){
     +'<span>'+title+'</span><span class="ct">'+rows.length+'</span>';
   hdr.onclick=()=>{collapsed[key]=!collapsed[key];render();};
   const bulk = key==='dead' ? {icon:'🪓',type:'fellGroup',title:'fell all '+rows.length+' deadwood'}
-             : key==='wip' ? {icon:'💾',type:'salvageGroup',title:'salvage all '+rows.length+' WIP → the review branch'} : null;
+             : key==='wip' ? {icon:'💾',type:'salvageGroup',title:'salvage all '+rows.length+' WIP → the review branch'}
+             : key==='needs' ? {icon:'⬆',type:'landGroup',title:'land all '+rows.length+' ready (ff to trunk)'} : null;
   if(bulk){
     const a=document.createElement('span'); a.className='hdraxe'; a.title=bulk.title; a.textContent=bulk.icon;
     a.onclick=e=>{e.stopPropagation();vscode.postMessage({type:bulk.type,trees:rows.map(r=>({path:r.path,branch:r.branch,name:r.name}))});};

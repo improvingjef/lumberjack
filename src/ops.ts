@@ -62,6 +62,34 @@ export async function unfellMany(repo: string, tokens: RestoreToken[]): Promise<
   for (const t of tokens) { try { await unfell(repo, t); } catch {} }
 }
 
+/**
+ * Land a branch: fast-forward the trunk to it. Requires the trunk to be checked
+ * out in the main worktree (so the working tree stays consistent). Refuses
+ * anything that isn't a clean fast-forward — never a merge commit, never force.
+ */
+export async function land(repo: string, branch: string, trunk?: string): Promise<{ ok: boolean; message: string }> {
+  const t = trunk ?? (await trunkBranch(repo));
+  const head = (await git(repo, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim();
+  if (head !== t) return { ok: false, message: `trunk '${t}' isn't checked out in the main worktree (it's on '${head}')` };
+  try {
+    await git(repo, ["merge", "--ff-only", branch]);
+    return { ok: true, message: `fast-forwarded ${t} → ${branch}` };
+  } catch {
+    return { ok: false, message: `${branch} isn't a fast-forward of ${t} (diverged)` };
+  }
+}
+
+/** Land each branch in turn; returns which landed and which were skipped. */
+export async function landMany(repo: string, branches: string[], trunk?: string): Promise<{ landed: string[]; skipped: string[] }> {
+  const t = trunk ?? (await trunkBranch(repo));
+  const landed: string[] = [], skipped: string[] = [];
+  for (const b of branches) {
+    const res = await land(repo, b, t);
+    (res.ok ? landed : skipped).push(b);
+  }
+  return { landed, skipped };
+}
+
 /** Park every listed tree's WIP onto one shared review branch; returns how many succeeded. */
 export async function salvageMany(repo: string, trees: TreeRef[], preserveBranch: string): Promise<number> {
   let n = 0;
@@ -114,4 +142,11 @@ export async function salvage(
   } finally {
     try { unlinkSync(tmpIndex); } catch {}
   }
+}
+
+/** Diffstat between two refs (worktree branches) — for judging rival solutions. */
+export async function compareStat(repo: string, a: string, b: string): Promise<{ files: number; raw: string }> {
+  const raw = (await git(repo, ["diff", "--stat", `${a}...${b}`])).trim();
+  const names = (await git(repo, ["diff", "--name-only", `${a}...${b}`])).split("\n").filter(Boolean);
+  return { files: names.length, raw };
 }

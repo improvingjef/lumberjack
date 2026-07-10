@@ -24,11 +24,11 @@ the next.
 
 ## Phase B — the missing verbs (human hands)
 
-- [ ] **4. land** — ff-merge a clean-ahead worktree into the trunk. Turns the
+- [x] **4. land** — ff-merge a clean-ahead worktree into the trunk. Turns the
       "needs you" section into a review-and-land queue with one action.
       - `ops.land(repo, branch)` (ff-only, refuses on divergence) · UI action
         on `needs` rows + "land all ready" header · CLI `lj land <wt>`.
-- [ ] **5. compare** — diff two worktrees against each other, for picking a
+- [x] **5. compare** — diff two worktrees against each other, for picking a
       winner among rival agent solutions (the tournament pattern).
       - `ops.compareStat(repo, a, b)` · UI "compare with…" → native diff ·
         CLI `lj compare <a> <b>`.
