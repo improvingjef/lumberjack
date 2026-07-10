@@ -114,3 +114,47 @@ export function summarize(worktrees: WorktreeFacts[], branchCount: number): Summ
   }
   return { total: worktrees.length, needs, wip, dead, understory: branchCount, aging };
 }
+
+/** The file path from a `git status --porcelain` line (unwrapping renames). */
+export function wipPath(line: string): string {
+  const p = line.slice(3);
+  return p.includes(" -> ") ? p.split(" -> ")[1] : p;
+}
+export function wipPaths(lines: string[]): string[] {
+  return lines.map(wipPath);
+}
+
+// ---- structural shapes for the agent-facing JSON (avoids importing Row and a
+//      circular git↔core dependency) ----
+interface RowLike {
+  kind?: string; name: string; branch: string; path: string;
+  group?: Group; ahead: number; dirty: boolean; trackedWip?: boolean;
+  amber?: boolean; age: number; wip: string[];
+  commits: { short: string; subj: string; onMaster: boolean }[];
+}
+interface FleetLike { worktrees: RowLike[]; branches: RowLike[]; }
+
+/** Worktrees whose uncommitted changes touch `file` (exact path or path-suffix). */
+export function whoHas(fleet: FleetLike, file: string): { name: string; path: string; branch: string }[] {
+  return fleet.worktrees
+    .filter((w) => (w.wip || []).some((l) => { const p = wipPath(l); return p === file || p.endsWith("/" + file); }))
+    .map((w) => ({ name: w.name, path: w.path, branch: w.branch }));
+}
+
+/** The stable, agent-facing serialization of a fleet. */
+export function fleetJson(fleet: FleetLike, repo?: string) {
+  const round = (n: number) => Math.round(n * 10) / 10;
+  const commitJson = (c: { short: string; subj: string; onMaster: boolean }) => ({ sha: c.short, subj: c.subj, onMaster: c.onMaster });
+  return {
+    repo,
+    summary: summarize(fleet.worktrees, fleet.branches.length),
+    worktrees: fleet.worktrees.map((w) => ({
+      name: w.name, branch: w.branch, path: w.path, group: w.group,
+      ahead: w.ahead, dirty: w.dirty, trackedWip: !!w.trackedWip, amber: !!w.amber,
+      age: round(w.age), wip: wipPaths(w.wip || []), commits: w.commits.map(commitJson),
+    })),
+    branches: fleet.branches.map((b) => ({
+      name: b.name, branch: b.branch, ahead: b.ahead, age: round(b.age), commits: b.commits.map(commitJson),
+    })),
+  };
+}

@@ -84,3 +84,36 @@ test("summarize: rolls a fleet into the summary line counts", () => {
     total: 5, needs: 2, wip: 2, dead: 1, understory: 128, aging: 1,
   });
 });
+
+test("wipPaths: file paths out of porcelain lines (incl renames)", () => {
+  assert.deepEqual(core.wipPaths([" M src/a.ts", "?? b.txt", "R  old.ts -> new.ts"]), ["src/a.ts", "b.txt", "new.ts"]);
+  assert.deepEqual(core.wipPaths([]), []);
+});
+
+test("whoHas: worktrees dirtying a file (exact or path-suffix)", () => {
+  const fleet = { worktrees: [
+    { name: "a", path: "/wt/a", branch: "a", wip: [" M bootstrap/src/Pipeline.hs"] },
+    { name: "b", path: "/wt/b", branch: "b", wip: [" M other.ts"] },
+    { name: "c", path: "/wt/c", branch: "c", wip: ["?? Pipeline.hs"] },
+  ], branches: [] };
+  assert.deepEqual(core.whoHas(fleet, "Pipeline.hs").map((x) => x.name).sort(), ["a", "c"]);
+  assert.deepEqual(core.whoHas(fleet, "nope.ts"), []);
+});
+
+test("fleetJson: stable agent-facing schema", () => {
+  const fleet = {
+    worktrees: [{
+      kind: "worktree", name: "a", branch: "a", path: "/wt/a", group: "wip", ahead: 0,
+      dirty: true, trackedWip: true, amber: false, age: 1.23, wip: [" M x.ts"], overflow: 0,
+      commits: [{ sha: "abc123def0", short: "abc123def", subj: "work", onMaster: false, date: 0, files: [], filesOverflow: 0 }],
+    }],
+    branches: [{ name: "salvage", branch: "salvage", ahead: 3, age: 9, wip: [], commits: [], overflow: 0, dirty: false, amber: false }],
+  };
+  const j = core.fleetJson(fleet, "/repo");
+  assert.equal(j.repo, "/repo");
+  assert.deepEqual(j.summary, { total: 1, needs: 0, wip: 1, dead: 0, understory: 1, aging: 0 });
+  assert.equal(j.worktrees[0].name, "a");
+  assert.deepEqual(j.worktrees[0].wip, ["x.ts"], "wip is file paths, not porcelain");
+  assert.equal(j.worktrees[0].commits[0].sha, "abc123def");
+  assert.equal(j.branches[0].name, "salvage");
+});

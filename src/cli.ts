@@ -14,6 +14,7 @@
 
 import { execFile } from "child_process";
 import { gatherFleet, Row } from "./git";
+import { fleetJson, whoHas } from "./core";
 
 const C = {
   reset: "\x1b[0m", dim: "\x1b[2m", bold: "\x1b[1m",
@@ -80,7 +81,12 @@ function repoName(repo: string): string {
   return repo.replace(/\/+$/, "").split("/").pop() || repo;
 }
 
-async function cmdStatus(repo: string) {
+async function cmdStatus(repo: string, json = false) {
+  if (json) {
+    const fleet = await gatherFleet(repo, { window: 10, maxFiles: 0, includeBranches: true });
+    process.stdout.write(JSON.stringify(fleetJson(fleet, repo), null, 2) + "\n");
+    return;
+  }
   const [fleet, loose] = await Promise.all([
     gatherFleet(repo, { window: 14, maxFiles: 0, includeBranches: false }),
     looseCount(repo),
@@ -101,6 +107,16 @@ async function cmdStatus(repo: string) {
     `${C.red}■${C.reset} off master  ${C.green}■${C.reset} on master   ` +
     `${C.dim}lj fell  ·  lj branches${C.reset}\n`
   );
+}
+
+async function cmdWhoHas(repo: string, file: string, json: boolean) {
+  const fleet = await gatherFleet(repo, { window: 1, maxFiles: 0, includeBranches: false });
+  const hits = whoHas(fleet, file);
+  if (json) { process.stdout.write(JSON.stringify(hits, null, 2) + "\n"); return; }
+  if (!hits.length) { console.log(`\n  no worktree has uncommitted changes to ${file}.\n`); return; }
+  console.log(`\n  ${C.bold}${hits.length}${C.reset} worktree(s) touching ${file}:\n`);
+  for (const h of hits) console.log(`  ${pad(h.name, 30)} ${C.dim}${h.branch}${C.reset}`);
+  console.log("");
 }
 
 async function cmdBranches(repo: string) {
@@ -151,6 +167,8 @@ function help() {
 ${C.bold}🪓 lj${C.reset} — tend your git worktree fleet
 
   ${C.bold}lj${C.reset}                  status table of the fleet
+  ${C.bold}lj --json${C.reset}           the whole fleet as structured data (for agents)
+  ${C.bold}lj who-has <file>${C.reset}   which worktrees have uncommitted changes to a file
   ${C.bold}lj branches${C.reset}         list loose branches (no worktree)
   ${C.bold}lj fell${C.reset}             preview the deadwood (landed + clean worktrees)
   ${C.bold}lj fell --go${C.reset}        fell them (remove worktree + delete merged branch)
@@ -167,14 +185,21 @@ async function main() {
   let cwd = process.cwd();
   const ci = argv.indexOf("-C");
   if (ci >= 0 && argv[ci + 1]) { cwd = argv[ci + 1]; argv.splice(ci, 2); }
-  const cmd = argv[0] ?? "status";
-  const flags = new Set(argv.slice(1));
+  const positional = argv.filter((a) => !a.startsWith("-"));
+  const flags = new Set(argv.filter((a) => a.startsWith("--")));
+  const json = flags.has("--json");
+  const cmd = positional[0] ?? "status";
 
-  if (cmd === "help" || cmd === "-h" || cmd === "--help") return help();
+  if (cmd === "help" || flags.has("--help") || argv.includes("-h")) return help();
   const repo = await repoRoot(cwd);
 
-  if (cmd === "status") return cmdStatus(repo);
+  if (cmd === "status") return cmdStatus(repo, json);
   if (cmd === "branches") return cmdBranches(repo);
+  if (cmd === "who-has") {
+    const file = positional[1];
+    if (!file) { console.error("lj who-has <file>"); process.exit(1); }
+    return cmdWhoHas(repo, file, json);
+  }
   if (cmd === "fell") return cmdFell(repo, flags.has("--go"), flags.has("--brush") || flags.has("--untracked-ok"));
   console.error(`lj: unknown command '${cmd}'. Try 'lj help'.`);
   process.exit(1);
