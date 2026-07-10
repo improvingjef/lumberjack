@@ -25,6 +25,9 @@
   ],
   "activationEvents": [],
   "main": "./out/extension.js",
+  "bin": {
+    "lj": "./out/cli.js"
+  },
   "contributes": {
     "commands": [
       {

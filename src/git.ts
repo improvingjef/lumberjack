@@ -86,7 +86,9 @@ async function commitsOf(
     const idx = ln.indexOf(US);
     const sha = ln.slice(0, idx);
     const subj = ln.slice(idx + 1);
-    const fr = await filesOf(repo, sha, cache, maxFiles);
+    const fr = maxFiles > 0
+      ? await filesOf(repo, sha, cache, maxFiles)
+      : { files: [], overflow: 0 };
     commits.push({
       sha,
       short: sha.slice(0, 9),
@@ -122,12 +124,17 @@ async function worktreeEntries(repo: string): Promise<WorktreeEntry[]> {
   return entries;
 }
 
+export interface GatherOpts {
+  window?: number; // recent commits per row (squares). Default 14.
+  maxFiles?: number; // per-commit file cap; <= 0 skips file gathering entirely.
+  includeBranches?: boolean; // scan loose branches (slow). Default true.
+}
+
 /** Gather the full fleet: worktrees (attention-sorted) + loose branches. */
-export async function gatherFleet(
-  repo: string,
-  window = 14,
-  maxFiles = 80
-): Promise<Fleet> {
+export async function gatherFleet(repo: string, opts: GatherOpts = {}): Promise<Fleet> {
+  const window = opts.window ?? 14;
+  const maxFiles = opts.maxFiles ?? 80;
+  const includeBranches = opts.includeBranches ?? true;
   const masterShas = new Set(
     (await git(repo, ["rev-list", "master"])).split("\n").filter(Boolean)
   );
@@ -178,7 +185,7 @@ export async function gatherFleet(
     .filter(Boolean);
 
   const branches: Row[] = [];
-  for (const b of allBranches) {
+  if (includeBranches) for (const b of allBranches) {
     if (b === "master" || checkedOut.has(b)) continue;
     const { commits, overflow } = await commitsOf(
       repo, repo, b, masterShas, cache, window, maxFiles

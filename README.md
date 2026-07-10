@@ -48,15 +48,38 @@ Run the command **Lumberjack: Open Worktree Fleet**. By default it surveys the
 first workspace folder; point it elsewhere with the `lumberjack.repoPath`
 setting.
 
+## `lj` — the CLI
+
+The terminal half, sharing the exact same `git.ts` core as the extension. From
+the repo:
+
+```bash
+npm run compile
+node out/cli.js            # or: npm link  →  lj
+```
+
+```
+lj                     status table of the fleet (colored squares in your terminal)
+lj branches            list loose branches (no worktree)
+lj reap                preview landed + fully-clean worktrees to remove
+lj reap --go           remove them (worktree dir + merged branch)
+lj reap --untracked-ok also reap worktrees dirty ONLY from untracked scratch
+lj -C <path>           operate on another repo (default: cwd's repo)
+lj help
+```
+
+Reaping previews by default; nothing is deleted without `--go`. It never
+touches the main worktree or the one you're standing in.
+
 ## Roadmap
 
 - **Actions on the squares** — right-click a worktree → open in new window,
   rebase onto master, park to a preserve branch, or **reap** (remove the
   worktree + delete the merged branch). The reaping logic already exists as
   scripts; the extension will shell out to it.
-- **`lj`** — a thin CLI sharing the same core, for the terminal half of the
-  workflow: `lj` (status), `lj reap` (fell landed + clean worktrees), `lj reap
-  --detritus`. Short by design — you'll type it a lot.
+- ~~**`lj`** — a thin CLI sharing the same core.~~ **Landed** — see above.
+  Next for it: `lj park <wt>` (park to a preserve branch) and a `lj open <wt>`
+  hand-off to the editor.
 - **Status bar** — `54 worktrees · 3 dirty · 7 ahead`, ambient.
 - **Branch hygiene** — surface and sweep loose `backup/*`, `wip/stash-*`, and
   orphaned agent branches.

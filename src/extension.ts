@@ -52,7 +52,7 @@ export function activate(context: vscode.ExtensionContext) {
     }
     const window = vscode.workspace.getConfiguration("lumberjack").get<number>("commitWindow") ?? 14;
     panel.webview.postMessage({ type: "loading" });
-    const fleet = await gatherFleet(repo, window);
+    const fleet = await gatherFleet(repo, { window, maxFiles: 80 });
     panel.webview.postMessage({ type: "data", repo, fleet });
   }
 
