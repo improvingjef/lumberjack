@@ -56,8 +56,11 @@ export function fleetHtml(): string {
   .hint{opacity:.6;margin-bottom:8px}
   .axe{opacity:0;cursor:pointer;margin-left:6px;flex:none;user-select:none;transition:opacity .1s}
   .row:hover .axe{opacity:.55} .axe:hover{opacity:1;transform:scale(1.15)}
-  .row.falling{transition:transform .45s cubic-bezier(.55,.06,.68,.19),opacity .45s ease-in;
-    transform:translateY(46px) rotate(5deg);opacity:0;pointer-events:none}
+  .row.falling{transform-origin:left bottom;
+    transition:transform .5s cubic-bezier(.6,.04,.98,.34),opacity .5s ease-in;
+    transform:translateY(48px) rotate(7deg);opacity:0;pointer-events:none}
+  @keyframes ljrise{from{opacity:0;transform:translateY(-20px) scaleY(.5)}to{opacity:1;transform:none}}
+  .row.rising{transform-origin:left bottom;animation:ljrise .42s cubic-bezier(.22,1,.36,1)}
 </style></head>
 <body>
 <header>
@@ -78,7 +81,7 @@ export function fleetHtml(): string {
 <script nonce="${n}">
 const vscode = acquireVsCodeApi();
 let DATA = {worktrees:[],branches:[]};
-let selRow=null, selCmt=-1, selRowObj=null;
+let selRow=null, selCmt=-1, selRowObj=null, pendingRise=null;
 const $=id=>document.getElementById(id);
 const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$('rightpad'),q=$('q');
 
@@ -101,6 +104,7 @@ function rowEl(r,gid){
   el.onclick=()=>selectRow(r,id);
   const axeEl=el.querySelector('.axe');
   if(axeEl) axeEl.onclick=(e)=>{e.stopPropagation();fellRow(r);};
+  if(pendingRise===r.path){ el.classList.add('rising'); pendingRise=null; }
   return el;
 }
 function fellRow(r){
@@ -170,7 +174,8 @@ window.addEventListener('message',ev=>{const m=ev.data;
   if(m.type==='loading'){left.innerHTML='<div class="pad hint">gathering fleet…</div>';}
   else if(m.type==='error'){left.innerHTML='<div class="pad hint">'+esc(m.message)+'</div>';}
   else if(m.type==='data'){DATA=m.fleet;counts();draw(q.value.trim().toLowerCase());}
-  else if(m.type==='felled'){felled(m.path);}});
+  else if(m.type==='felled'){felled(m.path);}
+  else if(m.type==='restored'){pendingRise=m.path;}});
 vscode.postMessage({type:'ready'});
 </script>
 </body></html>`;

@@ -2,14 +2,10 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { gatherFleet, showAtRef } from "./git";
 import { fleetHtml } from "./webview";
-import { execFile } from "child_process";
+import * as ops from "./ops";
 
-function runGit(cwd: string, args: string[]): Promise<string> {
-  return new Promise((resolve, reject) => {
-    execFile("git", ["-C", cwd, ...args], { maxBuffer: 64 * 1024 * 1024 }, (err, out, errout) =>
-      err ? reject(new Error(errout || err.message)) : resolve(out ?? "")
-    );
-  });
+function salvageBranch(): string {
+  return vscode.workspace.getConfiguration("lumberjack").get<string>("salvageBranch") || "salvage";
 }
 
 // Virtual documents for the historical side of a diff: lumberjack:<path>?repo=…&ref=…
@@ -93,38 +89,40 @@ export function activate(context: vscode.ExtensionContext) {
     }
   }
 
-  // Fell a worktree — undoably. Re-verifies freshness first; only prompts
-  // (modal) when there's unmerged work or uncommitted tracked WIP at stake.
-  // Otherwise it fells instantly and offers Undo, which recreates the tree +
-  // branch at the captured SHA (branch/commits survive in the reflog).
+  // Fell a worktree — undoably. Re-verifies freshness first; deadwood/brush
+  // fell instantly, offering Undo (which recreates the tree + branch at the
+  // captured SHA). A tree with real work at stake routes through a modal that
+  // can Salvage (park the WIP to a preserve branch) & Fell, or Fell anyway.
   async function fellWorktree(m: any) {
     const repo = repoRoot();
     if (!repo) return;
 
-    let ahead = 0;
-    let porc = "";
-    try { ahead = parseInt((await runGit(m.path, ["rev-list", "--count", "master..HEAD"])).trim(), 10) || 0; } catch {}
-    try { porc = await runGit(m.path, ["status", "--porcelain"]); } catch {}
-    const trackedWip = porc.split("\n").filter(Boolean).some((l) => !l.startsWith("??"));
-
-    if (ahead > 0 || trackedWip) {
-      const risks: string[] = [];
-      if (ahead > 0) risks.push(`${ahead} commit(s) not on master`);
-      if (trackedWip) risks.push(`uncommitted changes that can't be restored`);
-      const pick = await vscode.window.showWarningMessage(
-        `Fell ${m.name}?`, { modal: true, detail: `This tree has ${risks.join(" and ")}.` }, "Fell anyway"
-      );
-      if (pick !== "Fell anyway") return;
-    }
-
-    // capture restore info from the live tree before it's gone
-    let sha: string | undefined = m.sha;
-    try { sha = (await runGit(m.path, ["rev-parse", "HEAD"])).trim(); } catch {}
+    const a = await ops.assess(repo, m.path);
     const branch = m.branch && m.branch !== "(detached)" ? (m.branch as string) : null;
 
+    if (!a.safe) {
+      const risks: string[] = [];
+      if (a.ahead > 0) risks.push(`${a.ahead} commit(s) not on the trunk`);
+      if (a.trackedWip) risks.push(`uncommitted changes a fell can't restore`);
+      const buttons = a.trackedWip ? ["Salvage & Fell", "Fell anyway"] : ["Fell anyway"];
+      const pick = await vscode.window.showWarningMessage(
+        `Fell ${m.name}?`, { modal: true, detail: `This tree has ${risks.join(" and ")}.` }, ...buttons
+      );
+      if (!pick) return;
+      if (pick === "Salvage & Fell") {
+        try {
+          const c = await ops.salvage(repo, m.path, salvageBranch(), `salvage: preserve ${m.name} (lumberjack)`);
+          vscode.window.showInformationMessage(`Salvaged ${m.name} → ${salvageBranch()} @ ${c.slice(0, 9)}`);
+        } catch (e: any) {
+          vscode.window.showErrorMessage(`Salvage failed: ${e.message}`);
+          return;
+        }
+      }
+    }
+
+    let token: ops.RestoreToken;
     try {
-      await runGit(repo, ["worktree", "remove", "--force", m.path]);
-      if (branch) { try { await runGit(repo, ["branch", "-D", branch]); } catch {} }
+      token = await ops.fell(repo, m.path, branch);
     } catch (e: any) {
       vscode.window.showErrorMessage(`Fell failed: ${e.message}`);
       return;
@@ -134,11 +132,11 @@ export function activate(context: vscode.ExtensionContext) {
     const undo = await vscode.window.showInformationMessage(`🪓 Felled ${m.name}`, "Undo");
     if (undo === "Undo") {
       try {
-        if (branch && sha) await runGit(repo, ["worktree", "add", "-b", branch, m.path, sha]);
-        else if (sha) await runGit(repo, ["worktree", "add", "--detach", m.path, sha]);
+        await ops.unfell(repo, token);
+        panel?.webview.postMessage({ type: "restored", path: m.path });
         await sendData();
       } catch (e: any) {
-        vscode.window.showErrorMessage(`Undo failed: ${e.message} — the branch may still exist at ${sha?.slice(0, 9)}.`);
+        vscode.window.showErrorMessage(`Undo failed: ${e.message} — the branch may still be at ${token.sha.slice(0, 9)}.`);
       }
     }
   }

@@ -43,6 +43,15 @@ function git(repo: string, args: string[]): Promise<string> {
   });
 }
 
+/** The trunk branch to color against: master, else main, else origin's default. */
+export async function trunkBranch(repo: string): Promise<string> {
+  for (const b of ["master", "main"]) {
+    if ((await git(repo, ["rev-parse", "--verify", "--quiet", b])).trim()) return b;
+  }
+  const head = (await git(repo, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"])).trim();
+  return head ? head.replace(/^origin\//, "") : "master";
+}
+
 /** Files a single commit changed (memoised by sha across the whole scan). */
 async function filesOf(
   repo: string,
@@ -128,6 +137,7 @@ export interface GatherOpts {
   window?: number; // recent commits per row (squares). Default 14.
   maxFiles?: number; // per-commit file cap; <= 0 skips file gathering entirely.
   includeBranches?: boolean; // scan loose branches (slow). Default true.
+  trunk?: string; // branch to color against; auto-detected (master/main) if unset.
 }
 
 /** Gather the full fleet: worktrees (attention-sorted) + loose branches. */
@@ -135,8 +145,9 @@ export async function gatherFleet(repo: string, opts: GatherOpts = {}): Promise<
   const window = opts.window ?? 14;
   const maxFiles = opts.maxFiles ?? 80;
   const includeBranches = opts.includeBranches ?? true;
+  const trunk = opts.trunk ?? (await trunkBranch(repo));
   const masterShas = new Set(
-    (await git(repo, ["rev-list", "master"])).split("\n").filter(Boolean)
+    (await git(repo, ["rev-list", trunk])).split("\n").filter(Boolean)
   );
   const cache = new Map<string, { files: string[]; overflow: number }>();
 
@@ -156,7 +167,7 @@ export async function gatherFleet(repo: string, opts: GatherOpts = {}): Promise<
     const porc = (await git(e.path, ["status", "--porcelain"]))
       .split("\n")
       .filter(Boolean);
-    const aheadRaw = (await git(e.path, ["rev-list", "--count", "master..HEAD"])).trim();
+    const aheadRaw = (await git(e.path, ["rev-list", "--count", `${trunk}..HEAD`])).trim();
     worktrees.push({
       kind: "worktree",
       name,
@@ -186,11 +197,11 @@ export async function gatherFleet(repo: string, opts: GatherOpts = {}): Promise<
 
   const branches: Row[] = [];
   if (includeBranches) for (const b of allBranches) {
-    if (b === "master" || checkedOut.has(b)) continue;
+    if (b === trunk || checkedOut.has(b)) continue;
     const { commits, overflow } = await commitsOf(
       repo, repo, b, masterShas, cache, window, maxFiles
     );
-    const aheadRaw = (await git(repo, ["rev-list", "--count", `master..${b}`])).trim();
+    const aheadRaw = (await git(repo, ["rev-list", "--count", `${trunk}..${b}`])).trim();
     branches.push({
       kind: "branch",
       name: b,

@@ -51,6 +51,16 @@
           "type": "number",
           "default": 14,
           "description": "How many recent commits to render as squares per row."
+        },
+        "lumberjack.salvageBranch": {
+          "type": "string",
+          "default": "salvage",
+          "description": "Preserve branch that 'Salvage & Fell' appends a WIP snapshot to."
+        },
+        "lumberjack.trunk": {
+          "type": "string",
+          "default": "",
+          "description": "Trunk branch to color against. Empty = auto-detect (master, then main)."
         }
       }
     }
@@ -58,7 +68,8 @@
   "scripts": {
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./"
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test test/*.test.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",

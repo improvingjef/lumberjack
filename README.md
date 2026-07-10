@@ -90,13 +90,31 @@ untracked scratch; **salvage** preserves WIP before it's lost.
 Felling previews by default; nothing is removed without `--go`. It never
 touches the main worktree or the one you're standing in.
 
+## Testing
+
+Node's built-in runner (no extra deps), exercising the real logic against
+**real throwaway git repos** — git is the oracle:
+
+```bash
+npm test
+```
+
+- `git.ts` — trunk detection (master/main), ahead/dirty/on-trunk coloring,
+  attention sort, loose-branch surfacing, lean mode.
+- `ops.ts` — the load-bearing safety: `assess` (safe vs. unsafe), the
+  **fell → unfell round-trip restores tree + branch + content**, detached
+  worktrees, and `salvage` (tracked + untracked WIP snapshotted onto a preserve
+  branch, worktree untouched, history appended not clobbered).
+- `webview.ts` — the page's hooks and a fresh CSP nonce per render.
+
 ## Roadmap
 
-- ~~**Undoable felling**~~ — **landed** (see above). Fell from the fleet with
-  🪓 / `f`, `Undo` restores it.
-- **More actions on the squares** — open in new window, rebase onto master,
-  **salvage** (park WIP to a preserve branch), and **prune** the loose-branch
-  understory.
+- ~~**Undoable felling**~~ — **landed**. Fell with 🪓 / `f`, `Undo` restores.
+- ~~**Salvage**~~ — **landed** as *Salvage & Fell*: a WIP-bearing tree can park
+  its work (tracked + untracked) onto the `salvage` preserve branch before
+  felling, so even dirty trees become fearless.
+- **More actions on the squares** — open in new window, rebase onto master, and
+  **prune** the loose-branch understory.
 - ~~**`lj`** — a thin CLI sharing the same core.~~ **Landed** — see above.
   Next for it: `lj park <wt>` (park to a preserve branch) and a `lj open <wt>`
   hand-off to the editor.
