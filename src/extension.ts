@@ -2,6 +2,15 @@ import * as vscode from "vscode";
 import * as path from "path";
 import { gatherFleet, showAtRef } from "./git";
 import { fleetHtml } from "./webview";
+import { execFile } from "child_process";
+
+function runGit(cwd: string, args: string[]): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile("git", ["-C", cwd, ...args], { maxBuffer: 64 * 1024 * 1024 }, (err, out, errout) =>
+      err ? reject(new Error(errout || err.message)) : resolve(out ?? "")
+    );
+  });
+}
 
 // Virtual documents for the historical side of a diff: lumberjack:<path>?repo=…&ref=…
 const SCHEME = "lumberjack";
@@ -79,6 +88,58 @@ export function activate(context: vscode.ExtensionContext) {
       await vscode.commands.executeCommand(
         "vscode.diff", left, right, `${path.basename(msg.file)} (WIP)`
       );
+    } else if (msg.type === "fell") {
+      await fellWorktree(msg);
+    }
+  }
+
+  // Fell a worktree — undoably. Re-verifies freshness first; only prompts
+  // (modal) when there's unmerged work or uncommitted tracked WIP at stake.
+  // Otherwise it fells instantly and offers Undo, which recreates the tree +
+  // branch at the captured SHA (branch/commits survive in the reflog).
+  async function fellWorktree(m: any) {
+    const repo = repoRoot();
+    if (!repo) return;
+
+    let ahead = 0;
+    let porc = "";
+    try { ahead = parseInt((await runGit(m.path, ["rev-list", "--count", "master..HEAD"])).trim(), 10) || 0; } catch {}
+    try { porc = await runGit(m.path, ["status", "--porcelain"]); } catch {}
+    const trackedWip = porc.split("\n").filter(Boolean).some((l) => !l.startsWith("??"));
+
+    if (ahead > 0 || trackedWip) {
+      const risks: string[] = [];
+      if (ahead > 0) risks.push(`${ahead} commit(s) not on master`);
+      if (trackedWip) risks.push(`uncommitted changes that can't be restored`);
+      const pick = await vscode.window.showWarningMessage(
+        `Fell ${m.name}?`, { modal: true, detail: `This tree has ${risks.join(" and ")}.` }, "Fell anyway"
+      );
+      if (pick !== "Fell anyway") return;
+    }
+
+    // capture restore info from the live tree before it's gone
+    let sha: string | undefined = m.sha;
+    try { sha = (await runGit(m.path, ["rev-parse", "HEAD"])).trim(); } catch {}
+    const branch = m.branch && m.branch !== "(detached)" ? (m.branch as string) : null;
+
+    try {
+      await runGit(repo, ["worktree", "remove", "--force", m.path]);
+      if (branch) { try { await runGit(repo, ["branch", "-D", branch]); } catch {} }
+    } catch (e: any) {
+      vscode.window.showErrorMessage(`Fell failed: ${e.message}`);
+      return;
+    }
+    panel?.webview.postMessage({ type: "felled", path: m.path });
+
+    const undo = await vscode.window.showInformationMessage(`🪓 Felled ${m.name}`, "Undo");
+    if (undo === "Undo") {
+      try {
+        if (branch && sha) await runGit(repo, ["worktree", "add", "-b", branch, m.path, sha]);
+        else if (sha) await runGit(repo, ["worktree", "add", "--detach", m.path, sha]);
+        await sendData();
+      } catch (e: any) {
+        vscode.window.showErrorMessage(`Undo failed: ${e.message} — the branch may still exist at ${sha?.slice(0, 9)}.`);
+      }
     }
   }
 

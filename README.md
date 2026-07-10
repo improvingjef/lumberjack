@@ -48,6 +48,20 @@ Run the command **Lumberjack: Open Worktree Fleet**. By default it surveys the
 first workspace folder; point it elsewhere with the `lumberjack.repoPath`
 setting.
 
+## Felling — fearless because it's undoable
+
+Hover a worktree row and click the 🪓, or select a row and press **`f`**. The
+row *falls* — and a toast offers **Undo**. Undo genuinely restores it:
+Lumberjack captures the branch + HEAD SHA before removing, so undo runs
+`git worktree add -b <branch> <path> <sha>` and the tree, branch, and committed
+content all come back (the objects survive in the reflog).
+
+Because it's reversible, deadwood and brush-tangled trees fell **instantly, no
+confirmation** — that's the point: cleanup should feel like clearing brush, not
+defusing a bomb. The one guard: if a tree has *unmerged commits* or
+*uncommitted tracked changes* (real work that a fell can't restore), it routes
+through a modal that names exactly what's at stake before it'll proceed.
+
 ## `lj` — the CLI
 
 The terminal half, sharing the exact same `git.ts` core as the extension. From
@@ -78,10 +92,11 @@ touches the main worktree or the one you're standing in.
 
 ## Roadmap
 
-- **Actions on the squares** — right-click a worktree → open in new window,
-  rebase onto master, **salvage** (park WIP to a preserve branch), or **fell**
-  (remove the worktree + delete the merged branch). Undoable felling is the
-  headline: fell fearlessly, `Undo` restores it from the reflog.
+- ~~**Undoable felling**~~ — **landed** (see above). Fell from the fleet with
+  🪓 / `f`, `Undo` restores it.
+- **More actions on the squares** — open in new window, rebase onto master,
+  **salvage** (park WIP to a preserve branch), and **prune** the loose-branch
+  understory.
 - ~~**`lj`** — a thin CLI sharing the same core.~~ **Landed** — see above.
   Next for it: `lj park <wt>` (park to a preserve branch) and a `lj open <wt>`
   hand-off to the editor.

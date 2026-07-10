@@ -54,6 +54,10 @@ export function fleetHtml(): string {
   .wipfile{padding:2px 0;opacity:.85;cursor:pointer;word-break:break-all}
   .wipfile:hover{opacity:1;text-decoration:underline}
   .hint{opacity:.6;margin-bottom:8px}
+  .axe{opacity:0;cursor:pointer;margin-left:6px;flex:none;user-select:none;transition:opacity .1s}
+  .row:hover .axe{opacity:.55} .axe:hover{opacity:1;transform:scale(1.15)}
+  .row.falling{transition:transform .45s cubic-bezier(.55,.06,.68,.19),opacity .45s ease-in;
+    transform:translateY(46px) rotate(5deg);opacity:0;pointer-events:none}
 </style></head>
 <body>
 <header>
@@ -74,7 +78,7 @@ export function fleetHtml(): string {
 <script nonce="${n}">
 const vscode = acquireVsCodeApi();
 let DATA = {worktrees:[],branches:[]};
-let selRow=null, selCmt=-1;
+let selRow=null, selCmt=-1, selRowObj=null;
 const $=id=>document.getElementById(id);
 const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$('rightpad'),q=$('q');
 
@@ -91,9 +95,23 @@ function squares(r){
 function rowEl(r,gid){
   const el=document.createElement('div'), id=gid+':'+r.name;
   el.className='row'+(selRow===id?' sel':'');
-  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>';
+  el.dataset.path=r.path;
+  const axe = gid==='w' ? '<span class="axe" title="fell (f)">🪓</span>' : '';
+  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+axe;
   el.onclick=()=>selectRow(r,id);
+  const axeEl=el.querySelector('.axe');
+  if(axeEl) axeEl.onclick=(e)=>{e.stopPropagation();fellRow(r);};
   return el;
+}
+function fellRow(r){
+  vscode.postMessage({type:'fell',name:r.name,path:r.path,branch:r.branch,sha:(r.commits[0]||{}).sha});
+}
+function felled(path){
+  const el=left.querySelector('.row[data-path="'+CSS.escape(path)+'"]');
+  if(el){ el.classList.add('falling'); setTimeout(()=>el.remove(),480); }
+  DATA.worktrees=DATA.worktrees.filter(r=>r.path!==path);
+  if(selRowObj&&selRowObj.path===path){mid.classList.remove('open');right.classList.remove('open');selRow=null;selRowObj=null;}
+  counts();
 }
 function draw(f){
   left.innerHTML='';
@@ -104,7 +122,7 @@ function draw(f){
     br.forEach(r=>left.appendChild(rowEl(r,'b')));}
 }
 function selectRow(r,id){
-  selRow=id; selCmt=-1; mid.classList.add('open'); right.classList.remove('open');
+  selRow=id; selRowObj=r; selCmt=-1; q.blur(); mid.classList.add('open'); right.classList.remove('open');
   let h='<h2>'+esc(r.name)+'</h2><div class="rbranch">'+esc(r.branch)+'<br>'+esc(r.path)+'</div>';
   if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on master</div>';
   h+='<div class="hint">'+r.commits.length+' commit(s) — click one to see its files</div>';
@@ -140,13 +158,19 @@ function counts(){
 }
 q.oninput=()=>draw(q.value.trim().toLowerCase());
 $('refresh').onclick=()=>vscode.postMessage({type:'refresh'});
-document.onkeydown=e=>{if(e.key==='Escape'){
-  if(right.classList.contains('open')){right.classList.remove('open');selCmt=-1;}
-  else{mid.classList.remove('open');selRow=null;draw(q.value.trim().toLowerCase());}}};
+document.onkeydown=e=>{
+  if(e.key==='Escape'){
+    if(right.classList.contains('open')){right.classList.remove('open');selCmt=-1;}
+    else{mid.classList.remove('open');selRow=null;selRowObj=null;draw(q.value.trim().toLowerCase());}
+    return;
+  }
+  if(e.key==='f'&&document.activeElement!==q&&selRowObj&&selRow&&selRow[0]==='w'){ fellRow(selRowObj); }
+};
 window.addEventListener('message',ev=>{const m=ev.data;
   if(m.type==='loading'){left.innerHTML='<div class="pad hint">gathering fleet…</div>';}
   else if(m.type==='error'){left.innerHTML='<div class="pad hint">'+esc(m.message)+'</div>';}
-  else if(m.type==='data'){DATA=m.fleet;counts();draw(q.value.trim().toLowerCase());}});
+  else if(m.type==='data'){DATA=m.fleet;counts();draw(q.value.trim().toLowerCase());}
+  else if(m.type==='felled'){felled(m.path);}});
 vscode.postMessage({type:'ready'});
 </script>
 </body></html>`;
