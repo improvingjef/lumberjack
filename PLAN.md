@@ -35,10 +35,10 @@ the next.
 
 ## Phase C — agent hands + autonomy
 
-- [ ] **6. MCP server** — `lj mcp` exposes the read model (status/who-has/
+- [x] **6. MCP server** — `lj mcp` exposes the read model (status/who-has/
       claims) and the safe actions (fell/salvage/land) as MCP tools, so the IDE
       agent operates the fleet natively, not just sees it.
-- [ ] **7. caretaker** — `lj tend` composes everything into a proposed sweep
+- [x] **7. caretaker** — `lj tend` composes everything into a proposed sweep
       (fell deadwood · flag aging gems · surface collisions · list ready-to-
       land), `--go` to act (safe/undoable only). Plus an agent recipe.
       - `core.tendPlan(fleet)` (pure) · CLI `lj tend [--go]`.

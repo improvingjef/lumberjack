@@ -124,3 +124,20 @@ test("attachClaims: stamps a claim note onto matching worktrees", () => {
   assert.equal(wts[0].claim, "claiming gramma-w5e");
   assert.equal(wts[1].claim, undefined);
 });
+
+test("tendPlan: composes the fleet into a proposed sweep", () => {
+  const fleet = { worktrees: [
+    { name: "dead1", branch: "dead1", path: "/wt/dead1", group: "dead", amber: false, age: 0, wip: [] },
+    { name: "ready1", branch: "ready1", path: "/wt/ready1", group: "needs", amber: false, age: 0, wip: [] },
+    { name: "wip1", branch: "wip1", path: "/wt/wip1", group: "wip", amber: true, age: 9, wip: [" M shared.ts"] },
+    { name: "wip2", branch: "wip2", path: "/wt/wip2", group: "wip", amber: false, age: 1, wip: [" M shared.ts", "?? own.ts"] },
+  ], branches: [] };
+  const plan = core.tendPlan(fleet);
+  assert.deepEqual(plan.fell.map((x) => x.name), ["dead1"]);
+  assert.deepEqual(plan.land.map((x) => x.name), ["ready1"]);
+  assert.deepEqual(plan.salvage.map((x) => x.name).sort(), ["wip1", "wip2"]);
+  assert.deepEqual(plan.aging.map((x) => x.name), ["wip1"]);
+  const col = plan.collisions.find((c) => c.file === "shared.ts");
+  assert.ok(col && col.worktrees.sort().join(",") === "wip1,wip2", "shared.ts is a collision");
+  assert.ok(!plan.collisions.find((c) => c.file === "own.ts"), "own.ts touched by one → not a collision");
+});

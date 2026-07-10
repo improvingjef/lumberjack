@@ -14,7 +14,7 @@
 
 import { execFile } from "child_process";
 import { gatherFleet, Row } from "./git";
-import { fleetJson, whoHas, attachClaims } from "./core";
+import { fleetJson, whoHas, attachClaims, tendPlan } from "./core";
 import { readClaims, setClaim, clearClaim } from "./manifest";
 import * as ops from "./ops";
 
@@ -115,6 +115,27 @@ async function cmdStatus(repo: string, json = false) {
     `${C.red}■${C.reset} off master  ${C.green}■${C.reset} on master   ` +
     `${C.dim}lj fell  ·  lj branches${C.reset}\n`
   );
+}
+
+async function cmdTend(repo: string, json: boolean, go: boolean) {
+  const fleet = await gatherFleet(repo, { window: 1, maxFiles: 0, includeBranches: false });
+  const plan = tendPlan(fleet);
+  if (json) { process.stdout.write(JSON.stringify(plan, null, 2) + "\n"); return; }
+  console.log(`\n${C.bold}🌲 fleet tending${C.reset}\n`);
+  console.log(`  ${C.green}fell${C.reset}    ${plan.fell.length} deadwood`);
+  console.log(`  ${C.red}land${C.reset}    ${plan.land.length} ready`);
+  console.log(`  ${C.blue}salvage${C.reset} ${plan.salvage.length} WIP for review`);
+  if (plan.aging.length) console.log(`  ${C.yellow}aging${C.reset}   ${plan.aging.map((a) => `${a.name} (${a.age}d)`).join(", ")}`);
+  if (plan.collisions.length) {
+    console.log(`\n  ${C.red}collisions:${C.reset}`);
+    for (const c of plan.collisions) console.log(`    ${c.file} ${C.dim}—${C.reset} ${c.worktrees.join(", ")}`);
+  }
+  if (go) {
+    const tokens = await ops.fellMany(repo, plan.fell.map((f) => ({ path: f.path, branch: f.branch, name: f.name })));
+    console.log(`\n  felled ${tokens.length} deadwood.\n`);
+  } else if (plan.fell.length) {
+    console.log(`\n  ${C.dim}lj tend --go  fells the ${plan.fell.length} deadwood (safe); land/salvage need your judgment.${C.reset}\n`);
+  } else { console.log(""); }
 }
 
 async function cmdLand(repo: string, branch: string | undefined) {
@@ -218,6 +239,8 @@ ${C.bold}🪓 lj${C.reset} — tend your git worktree fleet
   ${C.bold}lj fell --brush${C.reset}     also fell trees tangled only in untracked brush
   ${C.bold}lj land <branch>${C.reset}    fast-forward the trunk to a ready branch
   ${C.bold}lj compare <a> <b>${C.reset}  diffstat between two branches/worktrees
+  ${C.bold}lj tend [--go]${C.reset}       propose a sweep (fell · land · salvage · aging · collisions)
+  ${C.bold}lj mcp${C.reset}              run as an MCP server (stdio) — fleet tools for an IDE agent
   ${C.bold}lj -C <path>${C.reset}        operate on another repo (default: cwd's repo)
   ${C.bold}lj help${C.reset}             this
 
@@ -249,6 +272,8 @@ async function main() {
   if (cmd === "claims") return cmdClaims(repo, json);
   if (cmd === "land") return cmdLand(repo, positional[1]);
   if (cmd === "compare") return cmdCompare(repo, positional[1], positional[2]);
+  if (cmd === "tend") return cmdTend(repo, json, flags.has("--go"));
+  if (cmd === "mcp") { const { runMcp } = await import("./mcp"); runMcp(cwd, "0.1.0"); return; }
   if (cmd === "fell") return cmdFell(repo, flags.has("--go"), flags.has("--brush") || flags.has("--untracked-ok"));
   console.error(`lj: unknown command '${cmd}'. Try 'lj help'.`);
   process.exit(1);

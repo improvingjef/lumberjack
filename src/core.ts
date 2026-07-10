@@ -149,6 +149,28 @@ export function whoHas(fleet: FleetLike, file: string): { name: string; path: st
     .map((w) => ({ name: w.name, path: w.path, branch: w.branch }));
 }
 
+export interface TendPlan {
+  fell: { name: string; branch: string; path: string }[]; // deadwood — safe to remove
+  land: { name: string; branch: string }[]; // clean-ahead — ready to ff
+  salvage: { name: string; path: string }[]; // WIP — park for review
+  aging: { name: string; age: number }[]; // dirty + stale gems
+  collisions: { file: string; worktrees: string[] }[]; // a file dirty in >1 worktree
+}
+
+/** Compose the fleet into a proposed caretaker sweep — the forester's to-do. */
+export function tendPlan(fleet: FleetLike): TendPlan {
+  const wt = fleet.worktrees;
+  const byFile: Record<string, string[]> = {};
+  for (const w of wt) for (const p of wipPaths(w.wip || [])) (byFile[p] ??= []).push(w.name);
+  return {
+    fell: wt.filter((w) => w.group === "dead").map((w) => ({ name: w.name, branch: w.branch, path: w.path })),
+    land: wt.filter((w) => w.group === "needs").map((w) => ({ name: w.name, branch: w.branch })),
+    salvage: wt.filter((w) => w.group === "wip").map((w) => ({ name: w.name, path: w.path })),
+    aging: wt.filter((w) => w.amber).map((w) => ({ name: w.name, age: Math.round(w.age) })),
+    collisions: Object.entries(byFile).filter(([, ns]) => ns.length > 1).map(([file, worktrees]) => ({ file, worktrees })),
+  };
+}
+
 /** The stable, agent-facing serialization of a fleet. */
 export function fleetJson(fleet: FleetLike, repo?: string) {
   const round = (n: number) => Math.round(n * 10) / 10;
