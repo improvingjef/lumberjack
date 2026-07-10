@@ -1,11 +1,11 @@
-// The webview: owns the glance (wrapping colored squares, three columns).
-// It renders from data posted by the extension host and posts back
-// open/diff intents — the real editor owns the content.
+// The webview — the calm glance. Sedimented sections, a one-line summary, a
+// disposable lens you raise, read, and drop. Renders from data the host posts
+// (cache-first, then live) and posts back peek/dive/fell/diff intents.
 
 function nonce(): string {
   let s = "";
-  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) s += chars[Math.floor(Math.random() * chars.length)];
+  const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  for (let i = 0; i < 32; i++) s += c[Math.floor(Math.random() * c.length)];
   return s;
 }
 
@@ -13,88 +13,91 @@ export function fleetHtml(compact = false): string {
   const n = nonce();
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${n}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${n}';">
 <style>
-  :root{ --blue:#3b82f6; --red:#ef4444; --green:#22c55e; }
+  :root{ --blue:#3b82f6; --red:#ef4444; --green:#22c55e; --amber:#f59e0b; }
   *{box-sizing:border-box}
-  body{margin:0;font:13px/1.4 var(--vscode-editor-font-family,ui-monospace,Menlo,monospace);
+  body{margin:0;font:13px/1.45 var(--vscode-editor-font-family,ui-monospace,Menlo,monospace);
        color:var(--vscode-foreground);background:var(--vscode-editor-background)}
   .sq{display:inline-block;width:11px;height:11px;border-radius:2px;vertical-align:middle}
   .blue{background:var(--blue)} .red{background:var(--red)} .green{background:var(--green)}
-  header{padding:8px 14px;border-bottom:1px solid var(--vscode-panel-border);
-         display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
-  header h1{font-size:13px;margin:0;font-weight:600}
-  .legend{display:flex;gap:12px;opacity:.8;flex-wrap:wrap}
-  .filter{margin-left:auto}
+  @keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}
+  .sq.blue{animation:breathe 2.6s ease-in-out infinite}
+  header{padding:9px 14px;border-bottom:1px solid var(--vscode-panel-border);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  h1{font-size:13px;margin:0;font-weight:600;white-space:nowrap}
+  .summary{opacity:.85;flex:1;min-width:120px}
+  .summary b{font-weight:600} .summary .amberc{color:var(--amber)}
   .filter input{background:var(--vscode-input-background);color:var(--vscode-input-foreground);
-    border:1px solid var(--vscode-input-border,transparent);border-radius:4px;padding:3px 7px;font:inherit;width:180px}
-  button{background:var(--vscode-button-background);color:var(--vscode-button-foreground);
-    border:0;border-radius:4px;padding:3px 9px;font:inherit;cursor:pointer}
-  .wrap{display:flex;height:calc(100vh - 40px)}
-  .col{overflow:auto} .left{flex:1;padding:3px 0}
+    border:1px solid var(--vscode-input-border,transparent);border-radius:4px;padding:3px 7px;font:inherit;width:150px}
+  .wrap{display:flex;height:calc(100vh - 42px)}
+  .col{overflow:auto} .left{flex:1;padding:2px 0}
   .mid,.right{width:0;overflow:hidden;border-left:1px solid var(--vscode-panel-border);transition:width .12s ease}
   .mid.open{width:min(42vw,560px)} .right.open{width:min(30vw,420px)}
-  .sectionhdr{padding:9px 14px 3px;opacity:.6;font-size:11px;text-transform:uppercase;
-    letter-spacing:.05em;border-top:1px solid var(--vscode-panel-border);margin-top:5px}
+  body[data-compact] .mid,body[data-compact] .right{display:none}
+  body[data-compact] .summary{flex-basis:100%;order:3} body[data-compact] .filter input{width:100%}
+  .sect{margin-top:2px}
+  .shdr{display:flex;gap:7px;align-items:center;padding:6px 14px 4px;cursor:pointer;opacity:.72;
+        font-size:11px;text-transform:uppercase;letter-spacing:.05em;user-select:none}
+  .shdr:hover{opacity:1} .shdr .chev{transition:transform .12s;display:inline-block;width:9px}
+  .shdr.closed .chev{transform:rotate(-90deg)} .shdr .ct{opacity:.6;font-variant-numeric:tabular-nums}
+  .shdr .dot{width:7px;height:7px;border-radius:2px;flex:none}
   .row{display:flex;gap:12px;align-items:baseline;padding:4px 14px;cursor:pointer;border-left:3px solid transparent}
   .row:hover,.cmt:hover,.file:hover{background:var(--vscode-list-hoverBackground)}
   .row.sel{background:var(--vscode-list-activeSelectionBackground);border-left-color:var(--blue)}
-  .nm{min-width:270px;max-width:270px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .row.cursor{background:var(--vscode-list-focusBackground,var(--vscode-list-hoverBackground));border-left-color:var(--vscode-focusBorder,#5a9)}
+  .row.amber .nm{color:var(--amber)}
+  .nm{min-width:270px;max-width:270px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}
+  body[data-compact] .nm{min-width:150px;max-width:150px}
   .sqs{display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start;flex:1}
-  .ovf{opacity:.6;font-size:11px;margin-left:4px}
-  .pad{padding:12px 14px} .pad h2{font-size:13px;margin:0 0 2px}
-  .rbranch{opacity:.65;margin-bottom:10px;word-break:break-all}
-  .cmt{display:flex;gap:8px;padding:6px 8px;border-top:1px solid var(--vscode-panel-border);cursor:pointer;border-radius:4px}
-  .cmt.sel{background:var(--vscode-list-activeSelectionBackground)}
-  .cmt .sq{margin-top:3px;flex:none} .csha{opacity:.6;flex:none} .csub{flex:1;word-break:break-word}
-  .file{padding:4px 6px;border-top:1px solid var(--vscode-panel-border);word-break:break-all;cursor:pointer;border-radius:4px}
-  .wipbox{margin-top:12px;padding:9px;background:var(--vscode-list-hoverBackground);border-radius:6px}
-  .wipbox h3{margin:0 0 6px;font-size:12px;color:var(--blue)}
-  .wipfile{padding:2px 0;opacity:.85;cursor:pointer;word-break:break-all}
-  .wipfile:hover{opacity:1;text-decoration:underline}
-  .hint{opacity:.6;margin-bottom:8px}
-  body[data-compact] .mid,body[data-compact] .right,body[data-compact] .legend{display:none}
-  body[data-compact] .nm{min-width:0;max-width:none}
-  body[data-compact] header{padding:6px 10px}
-  body[data-compact] .filter{margin-left:0;flex:1} body[data-compact] .filter input{width:100%}
+  .ovf{opacity:.55;font-size:11px;margin-left:4px}
+  .agetag{opacity:.7;color:var(--amber);font-size:11px;margin-left:6px;flex:none}
   .axe{opacity:0;cursor:pointer;margin-left:6px;flex:none;user-select:none;transition:opacity .1s}
   .row:hover .axe{opacity:.55} .axe:hover{opacity:1;transform:scale(1.15)}
-  .row.falling{transform-origin:left bottom;
-    transition:transform .5s cubic-bezier(.6,.04,.98,.34),opacity .5s ease-in;
+  .row.falling{transform-origin:left bottom;transition:transform .5s cubic-bezier(.6,.04,.98,.34),opacity .5s ease-in;
     transform:translateY(48px) rotate(7deg);opacity:0;pointer-events:none}
   @keyframes ljrise{from{opacity:0;transform:translateY(-20px) scaleY(.5)}to{opacity:1;transform:none}}
   .row.rising{transform-origin:left bottom;animation:ljrise .42s cubic-bezier(.22,1,.36,1)}
+  .pad{padding:12px 14px} .pad h2{font-size:13px;margin:0 0 2px}
+  .rbranch{opacity:.65;margin-bottom:10px;word-break:break-all}
+  .cmt{display:flex;gap:8px;padding:6px 8px;border-top:1px solid var(--vscode-panel-border);cursor:pointer;border-radius:4px}
+  .cmt.sel{background:var(--vscode-list-activeSelectionBackground)} .cmt .sq{margin-top:3px;flex:none}
+  .csha{opacity:.6;flex:none} .csub{flex:1;word-break:break-word}
+  .file{padding:4px 6px;border-top:1px solid var(--vscode-panel-border);word-break:break-all;cursor:pointer;border-radius:4px}
+  .hint{opacity:.6;margin-bottom:8px}
+  .loading{padding:18px 16px;opacity:.7;display:flex;gap:9px;align-items:center}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .spin{width:13px;height:13px;border:2px solid var(--vscode-panel-border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite}
+  .empty{padding:16px 14px;opacity:.55}
 </style></head>
 <body${compact ? " data-compact" : ""}>
 <header>
-  <h1>🪓 worktree fleet</h1>
-  <div class="legend">
-    <span id="counts">…</span>
-    <span><span class="sq blue"></span> WIP</span>
-    <span><span class="sq red"></span> off master</span>
-    <span><span class="sq green"></span> on master</span>
-  </div>
-  <div class="filter"><input id="q" placeholder="filter by name…"><button id="refresh">↻</button></div>
+  <h1>🪓 fleet</h1>
+  <span id="summary" class="summary">…</span>
+  <span class="filter"><input id="q" placeholder="/ filter…"></span>
 </header>
 <div class="wrap">
-  <div class="col left" id="left"><div class="pad hint">loading…</div></div>
+  <div class="col left" id="left"><div class="loading"><span class="spin"></span> reading the stand…</div></div>
   <div class="col mid" id="mid"><div class="pad" id="midpad"></div></div>
   <div class="col right" id="right"><div class="pad" id="rightpad"></div></div>
 </div>
 <script nonce="${n}">
 const vscode = acquireVsCodeApi();
 const COMPACT = ${compact};
+const AMBER_DAYS = 5;
 let DATA = {worktrees:[],branches:[]};
-let selRow=null, selCmt=-1, selRowObj=null, pendingRise=null;
+let selRow=null, selRowObj=null, selCmt=-1, pendingRise=null, cursor=-1, loaded=false;
+let flat=[];                       // visible rows in draw order: {el,r,gid}
+const fileCache={};                // sha -> {files,overflow}
+const collapsed={needs:false,flight:true,dead:true,understory:true};
 const $=id=>document.getElementById(id);
-const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$('rightpad'),q=$('q');
+const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$('rightpad'),q=$('q'),summary=$('summary');
+const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML;};
 
-function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
+const isAmber=r=>r.dirty && r.age>=AMBER_DAYS;
+function groupOf(r){ if(r.dirty) return 'flight'; if(r.ahead>0) return 'needs'; return 'dead'; }
 
 function squares(r){
-  // always reserve the WIP slot (empty transparent square when clean) so the
-  // commit squares line up in a column across every row
+  // always reserve the WIP slot so commit squares line up in a column
   let h = r.dirty ? '<span class="sq blue" title="uncommitted WIP"></span>' : '<span class="sq"></span>';
   for(const c of r.commits){const cls=c.onMaster?'green':'red';
     h+='<span class="sq '+cls+'" title="'+esc(c.short+' '+c.subj)+'"></span>';}
@@ -103,86 +106,117 @@ function squares(r){
 }
 function rowEl(r,gid){
   const el=document.createElement('div'), id=gid+':'+r.name;
-  el.className='row'+(selRow===id?' sel':'');
+  el.className='row'+(selRow===id?' sel':'')+(isAmber(r)?' amber':'');
   el.dataset.path=r.path;
+  const age = isAmber(r) ? '<span class="agetag" title="untouched '+Math.floor(r.age)+' days">'+Math.floor(r.age)+'d</span>' : '';
   const axe = gid==='w' ? '<span class="axe" title="fell (f)">🪓</span>' : '';
-  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+axe;
+  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+age+axe;
   el.onclick=()=>selectRow(r,id);
-  const axeEl=el.querySelector('.axe');
-  if(axeEl) axeEl.onclick=(e)=>{e.stopPropagation();fellRow(r);};
-  if(pendingRise===r.path){ el.classList.add('rising'); pendingRise=null; }
+  const ax=el.querySelector('.axe'); if(ax) ax.onclick=e=>{e.stopPropagation();fellRow(r);};
+  if(pendingRise===r.path){el.classList.add('rising');pendingRise=null;}
   return el;
 }
-function fellRow(r){
-  vscode.postMessage({type:'fell',name:r.name,path:r.path,branch:r.branch,sha:(r.commits[0]||{}).sha});
+function section(title,key,rows,dotColor,gid){
+  if(!rows.length) return;
+  const closed=collapsed[key];
+  const hdr=document.createElement('div');
+  hdr.className='shdr'+(closed?' closed':'');
+  hdr.innerHTML='<span class="chev">▾</span>'+(dotColor?'<span class="dot" style="background:'+dotColor+'"></span>':'')
+    +'<span>'+title+'</span><span class="ct">'+rows.length+'</span>';
+  hdr.onclick=()=>{collapsed[key]=!collapsed[key];render();};
+  left.appendChild(hdr);
+  if(!closed) for(const r of rows){ const el=rowEl(r,gid); left.appendChild(el); flat.push({el,r,gid}); }
 }
-function felled(path){
-  const el=left.querySelector('.row[data-path="'+CSS.escape(path)+'"]');
-  if(el){ el.classList.add('falling'); setTimeout(()=>el.remove(),480); }
-  DATA.worktrees=DATA.worktrees.filter(r=>r.path!==path);
-  if(selRowObj&&selRowObj.path===path){mid.classList.remove('open');right.classList.remove('open');selRow=null;selRowObj=null;}
-  counts();
+function render(){
+  const f=q.value.trim().toLowerCase();
+  const match=r=>!f||r.name.toLowerCase().includes(f);
+  const wt=DATA.worktrees.filter(match);
+  const needs=wt.filter(r=>groupOf(r)==='needs');
+  const flight=wt.filter(r=>groupOf(r)==='flight');
+  const dead=wt.filter(r=>groupOf(r)==='dead');
+  const br=DATA.branches.filter(match);
+  const aging=flight.filter(isAmber).length;
+  summary.innerHTML='<b>'+needs.length+'</b> need you · <b>'+flight.length+'</b> in flight · <b>'
+    +dead.length+'</b> deadwood · <b>'+br.length+'</b> understory'
+    +(aging?' · <span class="amberc"><b>'+aging+'</b> aging</span>':'');
+  left.innerHTML=''; flat=[]; cursor=-1;
+  if(!loaded){ left.innerHTML='<div class="loading"><span class="spin"></span> reading the stand…</div>'; return; }
+  section('needs you','needs',needs,'var(--red)','w');
+  section('in flight','flight',flight,'var(--blue)','w');
+  section('deadwood','dead',dead,'var(--green)','w');
+  section('understory — branches','understory',br,'','b');
+  if(!flat.length && !f) left.innerHTML+='<div class="empty">the stand is clear. nothing needs you.</div>';
 }
-function draw(f){
-  left.innerHTML='';
-  DATA.worktrees.filter(r=>!f||r.name.toLowerCase().includes(f)).forEach(r=>left.appendChild(rowEl(r,'w')));
-  const br=DATA.branches.filter(r=>!f||r.name.toLowerCase().includes(f));
-  if(br.length){const hdr=document.createElement('div');hdr.className='sectionhdr';
-    hdr.textContent='branches — no worktree ('+br.length+')';left.appendChild(hdr);
-    br.forEach(r=>left.appendChild(rowEl(r,'b')));}
-}
+
 function selectRow(r,id){
-  if(COMPACT){ selRow=id; selRowObj=r; draw(q.value.trim().toLowerCase()); vscode.postMessage({type:'openFull',name:r.name}); return; }
+  if(COMPACT){ selRow=id; selRowObj=r; render(); vscode.postMessage({type:'openFull',name:r.name}); return; }
   selRow=id; selRowObj=r; selCmt=-1; q.blur(); mid.classList.add('open'); right.classList.remove('open');
   let h='<h2>'+esc(r.name)+'</h2><div class="rbranch">'+esc(r.branch)+'<br>'+esc(r.path)+'</div>';
-  if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on master</div>';
-  h+='<div class="hint">'+r.commits.length+' commit(s) — click one to see its files</div>';
+  if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on the trunk</div>';
+  h+='<div class="hint">Enter dives in · click a commit for its files</div>';
   r.commits.forEach((c,i)=>{const cls=c.onMaster?'green':'red';
     h+='<div class="cmt" data-i="'+i+'"><span class="sq '+cls+'"></span><span class="csha">'+esc(c.short)+'</span><span class="csub">'+esc(c.subj)+'</span></div>';});
   if(r.overflow) h+='<div class="cmt"><span class="csub ovf">…+'+r.overflow+' older</span></div>';
-  if(r.dirty){h+='<div class="wipbox"><h3>WIP — uncommitted (click a file to diff)</h3>';
-    for(const line of r.wip){const p=line.slice(3);
-      h+='<div class="wipfile" data-wip="'+esc(p)+'">'+esc(line)+'</div>';}
-    h+='</div>';}
+  if(r.dirty){h+='<div class="hint" style="margin-top:12px;color:var(--blue)">WIP — click a file to diff</div>';
+    for(const line of r.wip){const p=line.slice(3); h+='<div class="file" data-wip="'+esc(p)+'">'+esc(line)+'</div>';}}
   midpad.innerHTML=h;
   midpad.querySelectorAll('.cmt[data-i]').forEach(el=>el.onclick=()=>selectCommit(r,+el.dataset.i));
-  midpad.querySelectorAll('.wipfile').forEach(el=>el.onclick=()=>
-    vscode.postMessage({type:'diffWip',cwd:r.path,file:el.dataset.wip}));
-  draw(q.value.trim().toLowerCase());
+  midpad.querySelectorAll('.file[data-wip]').forEach(el=>el.onclick=()=>vscode.postMessage({type:'diffWip',cwd:r.path,file:el.dataset.wip}));
+  render();
 }
 function selectCommit(r,i){
   selCmt=i; const c=r.commits[i]; right.classList.add('open');
   midpad.querySelectorAll('.cmt[data-i]').forEach(el=>el.classList.toggle('sel',+el.dataset.i===i));
+  const cached=fileCache[c.sha];
   let h='<h2>'+esc(c.short)+'</h2><div class="rbranch">'+esc(c.subj)+'</div>';
-  h+='<div class="hint">'+c.files.length+' file(s) changed — click to diff</div>';
-  for(const fn of c.files) h+='<div class="file" data-f="'+esc(fn)+'">'+esc(fn)+'</div>';
-  if(c.filesOverflow) h+='<div class="file ovf">…+'+c.filesOverflow+' more</div>';
+  if(!cached){ h+='<div class="loading"><span class="spin"></span> files…</div>'; vscode.postMessage({type:'reqFiles',sha:c.sha}); }
+  else { h+='<div class="hint">'+cached.files.length+' file(s) — click to diff</div>';
+    for(const fn of cached.files) h+='<div class="file" data-f="'+esc(fn)+'">'+esc(fn)+'</div>';
+    if(cached.overflow) h+='<div class="file ovf">…+'+cached.overflow+' more</div>'; }
   rightpad.innerHTML=h;
-  rightpad.querySelectorAll('.file[data-f]').forEach(el=>el.onclick=()=>
-    vscode.postMessage({type:'diffCommit',sha:c.sha,file:el.dataset.f}));
+  rightpad.querySelectorAll('.file[data-f]').forEach(el=>el.onclick=()=>vscode.postMessage({type:'diffCommit',sha:c.sha,file:el.dataset.f}));
+  rightState={r,i,sha:c.sha};
 }
-function counts(){
-  const w=DATA.worktrees, dirty=w.filter(r=>r.dirty).length,
-    ahead=w.filter(r=>r.ahead>0&&!r.dirty).length,
-    clean=w.length-w.filter(r=>r.dirty||r.ahead>0).length;
-  $('counts').textContent=w.length+' worktrees · '+DATA.branches.length+' loose · '+dirty+' dirty · '+ahead+' ahead · '+clean+' landed';
+let rightState=null;
+function fellRow(r){ vscode.postMessage({type:'fell',name:r.name,path:r.path,branch:r.branch,sha:(r.commits[0]||{}).sha}); }
+function diveRow(r){ if(r.kind==='worktree') vscode.postMessage({type:'dive',path:r.path,name:r.name}); }
+function felled(path){
+  const el=left.querySelector('.row[data-path="'+CSS.escape(path)+'"]');
+  if(el){el.classList.add('falling');setTimeout(()=>el.remove(),480);}
+  DATA.worktrees=DATA.worktrees.filter(r=>r.path!==path);
+  if(selRowObj&&selRowObj.path===path){mid.classList.remove('open');right.classList.remove('open');selRow=null;selRowObj=null;}
+  render();
 }
-q.oninput=()=>draw(q.value.trim().toLowerCase());
-$('refresh').onclick=()=>vscode.postMessage({type:'refresh'});
+
+// keyboard: j/k move · Space peek · Enter dive · f fell · / filter · Esc back
+function moveCursor(d){
+  if(!flat.length) return;
+  cursor=Math.max(0,Math.min(flat.length-1,cursor<0?0:cursor+d));
+  flat.forEach((x,i)=>x.el.classList.toggle('cursor',i===cursor));
+  flat[cursor].el.scrollIntoView({block:'nearest'});
+}
 document.onkeydown=e=>{
-  if(e.key==='Escape'){
-    if(right.classList.contains('open')){right.classList.remove('open');selCmt=-1;}
-    else{mid.classList.remove('open');selRow=null;selRowObj=null;draw(q.value.trim().toLowerCase());}
-    return;
-  }
-  if(e.key==='f'&&document.activeElement!==q&&selRowObj&&selRow&&selRow[0]==='w'){ fellRow(selRowObj); }
+  if(document.activeElement===q){ if(e.key==='Escape'){q.blur();} return; }
+  if(e.key==='/'){ e.preventDefault(); q.focus(); return; }
+  if(e.key==='j'||e.key==='ArrowDown'){ e.preventDefault(); moveCursor(1); return; }
+  if(e.key==='k'||e.key==='ArrowUp'){ e.preventDefault(); moveCursor(-1); return; }
+  const cur=cursor>=0?flat[cursor]:null;
+  if(e.key==='Enter'&&cur){ e.preventDefault(); COMPACT?vscode.postMessage({type:'openFull'}):diveRow(cur.r); return; }
+  if(e.key===' '&&cur){ e.preventDefault(); selectRow(cur.r,cur.gid+':'+cur.r.name); return; }
+  if(e.key==='f'&&cur&&cur.gid==='w'){ e.preventDefault(); fellRow(cur.r); return; }
+  if(e.key==='Escape'){ if(right.classList.contains('open')){right.classList.remove('open');selCmt=-1;} else{mid.classList.remove('open');selRow=null;selRowObj=null;render();} }
 };
+q.oninput=()=>render();
+
 window.addEventListener('message',ev=>{const m=ev.data;
-  if(m.type==='loading'){left.innerHTML='<div class="pad hint">gathering fleet…</div>';}
-  else if(m.type==='error'){left.innerHTML='<div class="pad hint">'+esc(m.message)+'</div>';}
-  else if(m.type==='data'){DATA=m.fleet;counts();draw(q.value.trim().toLowerCase());}
-  else if(m.type==='felled'){felled(m.path);}
-  else if(m.type==='restored'){pendingRise=m.path;}});
+  if(m.type==='loading'){ loaded=false; render(); }
+  else if(m.type==='error'){ loaded=true; left.innerHTML='<div class="empty">'+esc(m.message)+'</div>'; }
+  else if(m.type==='data'){ DATA=m.fleet; loaded=true; render(); }
+  else if(m.type==='worktrees'){ DATA.worktrees=m.worktrees; loaded=true; render(); }
+  else if(m.type==='branches'){ DATA.branches=m.branches; render(); }
+  else if(m.type==='files'){ fileCache[m.sha]={files:m.files,overflow:m.overflow}; if(rightState&&rightState.sha===m.sha&&right.classList.contains('open')) selectCommit(rightState.r,rightState.i); }
+  else if(m.type==='felled'){ felled(m.path); }
+  else if(m.type==='restored'){ pendingRise=m.path; }});
 vscode.postMessage({type:'ready'});
 </script>
 </body></html>`;

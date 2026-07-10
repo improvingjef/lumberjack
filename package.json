@@ -2,7 +2,7 @@
   "name": "lumberjack",
   "displayName": "Lumberjack",
   "description": "A glance tool for your git worktree fleet — colored-square status at a glance, drill into commits and files, with native diff and source.",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "publisher": "improvingjef",
   "license": "MIT",
   "repository": {
