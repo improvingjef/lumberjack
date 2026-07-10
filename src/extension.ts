@@ -1,8 +1,17 @@
 import * as vscode from "vscode";
 import * as path from "path";
+import { execFile } from "child_process";
 import { gatherWorktrees, gatherBranches, commitFiles, showAtRef, Fleet } from "./git";
 import { fleetHtml } from "./webview";
+import { attachClaims } from "./core";
+import { readClaims } from "./manifest";
 import * as ops from "./ops";
+
+function commonDir(repo: string): Promise<string> {
+  return new Promise((res) =>
+    execFile("git", ["-C", repo, "rev-parse", "--path-format=absolute", "--git-common-dir"], (_e, o) =>
+      res((o || "").trim() || `${repo}/.git`)));
+}
 
 const SCHEME = "lumberjack";
 
@@ -64,6 +73,7 @@ export function activate(context: vscode.ExtensionContext) {
     else views.forEach((w) => w.postMessage({ type: "loading" }));
 
     const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
+    attachClaims(worktrees, readClaims(await commonDir(repo)));
     views.forEach((w) => w.postMessage({ type: "worktrees", worktrees, select }));
     pendingSelect = undefined;
     paintStatus({ worktrees, branches: cached?.branches ?? [] });

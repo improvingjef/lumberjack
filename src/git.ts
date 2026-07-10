@@ -32,6 +32,7 @@ export interface Row {
   age: number; // days since the newest commit
   group?: Group; // worktree rows only — the section it belongs to
   amber: boolean; // an aging (dirty + stale) gem
+  claim?: string; // note from the shared claims board, if any
 }
 
 export interface Fleet {

@@ -129,10 +129,18 @@ export function wipPaths(lines: string[]): string[] {
 interface RowLike {
   kind?: string; name: string; branch: string; path: string;
   group?: Group; ahead: number; dirty: boolean; trackedWip?: boolean;
-  amber?: boolean; age: number; wip: string[];
+  amber?: boolean; age: number; wip: string[]; claim?: string;
   commits: { short: string; subj: string; onMaster: boolean }[];
 }
 interface FleetLike { worktrees: RowLike[]; branches: RowLike[]; }
+
+/** Stamp each worktree with its claim note from the central store (by path). */
+export function attachClaims<T extends { path: string; claim?: string }>(
+  worktrees: T[], claims: Record<string, { note: string; at?: number }>
+): T[] {
+  for (const w of worktrees) { const c = claims[w.path]; w.claim = c ? c.note : undefined; }
+  return worktrees;
+}
 
 /** Worktrees whose uncommitted changes touch `file` (exact path or path-suffix). */
 export function whoHas(fleet: FleetLike, file: string): { name: string; path: string; branch: string }[] {
@@ -151,7 +159,7 @@ export function fleetJson(fleet: FleetLike, repo?: string) {
     worktrees: fleet.worktrees.map((w) => ({
       name: w.name, branch: w.branch, path: w.path, group: w.group,
       ahead: w.ahead, dirty: w.dirty, trackedWip: !!w.trackedWip, amber: !!w.amber,
-      age: round(w.age), wip: wipPaths(w.wip || []), commits: w.commits.map(commitJson),
+      age: round(w.age), claim: w.claim, wip: wipPaths(w.wip || []), commits: w.commits.map(commitJson),
     })),
     branches: fleet.branches.map((b) => ({
       name: b.name, branch: b.branch, ahead: b.ahead, age: round(b.age), commits: b.commits.map(commitJson),

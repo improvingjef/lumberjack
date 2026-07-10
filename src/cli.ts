@@ -14,7 +14,8 @@
 
 import { execFile } from "child_process";
 import { gatherFleet, Row } from "./git";
-import { fleetJson, whoHas } from "./core";
+import { fleetJson, whoHas, attachClaims } from "./core";
+import { readClaims, setClaim, clearClaim } from "./manifest";
 
 const C = {
   reset: "\x1b[0m", dim: "\x1b[2m", bold: "\x1b[1m",
@@ -81,9 +82,15 @@ function repoName(repo: string): string {
   return repo.replace(/\/+$/, "").split("/").pop() || repo;
 }
 
+async function commonDir(cwd: string): Promise<string> {
+  const d = (await git(cwd, ["rev-parse", "--path-format=absolute", "--git-common-dir"])).trim();
+  return d || `${cwd}/.git`;
+}
+
 async function cmdStatus(repo: string, json = false) {
   if (json) {
     const fleet = await gatherFleet(repo, { window: 10, maxFiles: 0, includeBranches: true });
+    attachClaims(fleet.worktrees, readClaims(await commonDir(repo)));
     process.stdout.write(JSON.stringify(fleetJson(fleet, repo), null, 2) + "\n");
     return;
   }
@@ -107,6 +114,27 @@ async function cmdStatus(repo: string, json = false) {
     `${C.red}■${C.reset} off master  ${C.green}■${C.reset} on master   ` +
     `${C.dim}lj fell  ·  lj branches${C.reset}\n`
   );
+}
+
+async function cmdClaim(cwd: string, note: string | undefined, clear: boolean) {
+  const top = (await git(cwd, ["rev-parse", "--show-toplevel"])).trim();
+  if (!top) { console.error("lj: not inside a git worktree"); process.exit(1); }
+  const store = await commonDir(cwd);
+  const name = top.split("/").pop() || top;
+  if (clear) { clearClaim(store, top); console.log(`  cleared claim on ${name}`); return; }
+  if (!note) { console.error('lj claim "<note>"   (or --clear)'); process.exit(1); }
+  setClaim(store, top, note);
+  console.log(`  claimed ${name}: ${note}`);
+}
+
+async function cmdClaims(repo: string, json: boolean) {
+  const claims = readClaims(await commonDir(repo));
+  if (json) { process.stdout.write(JSON.stringify(claims, null, 2) + "\n"); return; }
+  const entries = Object.entries(claims);
+  if (!entries.length) { console.log("\n  no claims.\n"); return; }
+  console.log(`\n  ${C.bold}${entries.length}${C.reset} claim(s):\n`);
+  for (const [p, c] of entries) console.log(`  ${pad(p.split("/").pop() || p, 30)} ${C.dim}${c.note}${C.reset}`);
+  console.log("");
 }
 
 async function cmdWhoHas(repo: string, file: string, json: boolean) {
@@ -169,6 +197,8 @@ ${C.bold}🪓 lj${C.reset} — tend your git worktree fleet
   ${C.bold}lj${C.reset}                  status table of the fleet
   ${C.bold}lj --json${C.reset}           the whole fleet as structured data (for agents)
   ${C.bold}lj who-has <file>${C.reset}   which worktrees have uncommitted changes to a file
+  ${C.bold}lj claim "<note>"${C.reset}   claim this worktree on the shared board (--clear to release)
+  ${C.bold}lj claims${C.reset}           list all worktree claims
   ${C.bold}lj branches${C.reset}         list loose branches (no worktree)
   ${C.bold}lj fell${C.reset}             preview the deadwood (landed + clean worktrees)
   ${C.bold}lj fell --go${C.reset}        fell them (remove worktree + delete merged branch)
@@ -200,6 +230,8 @@ async function main() {
     if (!file) { console.error("lj who-has <file>"); process.exit(1); }
     return cmdWhoHas(repo, file, json);
   }
+  if (cmd === "claim") return cmdClaim(cwd, positional[1], flags.has("--clear"));
+  if (cmd === "claims") return cmdClaims(repo, json);
   if (cmd === "fell") return cmdFell(repo, flags.has("--go"), flags.has("--brush") || flags.has("--untracked-ok"));
   console.error(`lj: unknown command '${cmd}'. Try 'lj help'.`);
   process.exit(1);

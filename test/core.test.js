@@ -117,3 +117,10 @@ test("fleetJson: stable agent-facing schema", () => {
   assert.equal(j.worktrees[0].commits[0].sha, "abc123def");
   assert.equal(j.branches[0].name, "salvage");
 });
+
+test("attachClaims: stamps a claim note onto matching worktrees", () => {
+  const wts = [{ path: "/wt/a", name: "a" }, { path: "/wt/b", name: "b" }];
+  core.attachClaims(wts, { "/wt/a": { note: "claiming gramma-w5e", at: 123 } });
+  assert.equal(wts[0].claim, "claiming gramma-w5e");
+  assert.equal(wts[1].claim, undefined);
+});

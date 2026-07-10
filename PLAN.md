@@ -16,7 +16,7 @@ the next.
 - [x] **2. `lj who-has <file>`** — collision detection. Which worktrees have a
       file dirty (agents fighting the same file, caught *before* the merge).
       - `core.whoHas(fleet, file)` (pure) · CLI `who-has` (+`--json`).
-- [ ] **3. claims / manifests** — a per-worktree note ("claiming gramma-w5e;
+- [x] **3. claims / manifests** — a per-worktree note ("claiming gramma-w5e;
       touching seam lowering; tests green") in a central store, surfaced on
       rows. The stigmergic blackboard; mirrors the beads claim discipline.
       - `manifest.ts` (central store I/O) · `core.attachClaims` (pure merge) ·

@@ -51,6 +51,7 @@ export function fleetHtml(compact = false): string {
   .sqs{display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start;flex:1}
   .ovf{opacity:.55;font-size:11px;margin-left:4px}
   .agetag{opacity:.7;color:var(--amber);font-size:11px;margin-left:6px;flex:none}
+  .claim{margin-left:6px;flex:none;cursor:default;font-size:11px}
   .acts{display:flex;gap:4px;margin-left:6px;flex:none;opacity:0;transition:opacity .1s}
   .row:hover .acts{opacity:.6} .act{cursor:pointer;user-select:none;padding:0 1px} .act:hover{opacity:1;transform:scale(1.18)}
   .hdraxe{margin-left:auto;cursor:pointer;opacity:.45;user-select:none;padding:0 2px} .hdraxe:hover{opacity:1;transform:scale(1.15)}
@@ -108,12 +109,13 @@ function rowEl(r,gid){
   el.className='row'+(selRow===id?' sel':'')+(r.amber?' amber':'');
   el.dataset.path=r.path;
   const age = r.amber ? '<span class="agetag" title="untouched '+Math.floor(r.age)+' days">'+Math.floor(r.age)+'d</span>' : '';
+  const claim = r.claim ? '<span class="claim" title="'+esc(r.claim)+'">📌</span>' : '';
   const acts = gid==='w' ? '<span class="acts">'
     + '<span class="act" data-a="open" title="open the worktree">↗</span>'
     + (r.dirty ? '<span class="act" data-a="salvage" title="park WIP to the salvage branch">💾</span>' : '')
     + '<span class="act" data-a="fell" title="fell (f)">🪓</span>'
     + '</span>' : '';
-  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+age+acts;
+  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+claim+age+acts;
   el.onclick=()=>selectRow(r,id);
   el.querySelectorAll('.act').forEach(a=>a.onclick=e=>{e.stopPropagation();
     const k=a.dataset.a;
@@ -173,6 +175,7 @@ function selectRow(r,id){
   if(r.kind==='worktree'&&r.group) collapsed[r.group]=false; // reveal it in the left column
   mid.classList.add('open'); right.classList.remove('open');
   let h='<h2>'+esc(r.name)+'</h2><div class="rbranch">'+esc(r.branch)+'<br>'+esc(r.path)+'</div>';
+  if(r.claim) h+='<div class="rbranch" style="color:var(--blue)">📌 '+esc(r.claim)+'</div>';
   if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on the trunk</div>';
   h+='<div class="hint">Enter dives in · click a commit for its files</div>';
   r.commits.forEach((c,i)=>{const cls=c.onMaster?'green':'red';
