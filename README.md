@@ -107,18 +107,26 @@ npm test
   branch, worktree untouched, history appended not clobbered).
 - `webview.ts` — the page's hooks and a fresh CSP nonce per render.
 
+Plus **extension-host smoke tests** (`npm run test:integration`) via
+`@vscode/test-electron`: they launch a real VS Code, activate the extension,
+and assert its commands register and run. Kept separate from the fast unit
+suite (which needs no VS Code).
+
 ## Roadmap
 
 - ~~**Undoable felling**~~ — **landed**. Fell with 🪓 / `f`, `Undo` restores.
 - ~~**Salvage**~~ — **landed** as *Salvage & Fell*: a WIP-bearing tree can park
   its work (tracked + untracked) onto the `salvage` preserve branch before
   felling, so even dirty trees become fearless.
+- ~~**Status-bar tile**~~ — **landed**. `🪓 55 · 3 dirty · 7 ahead`, ambient,
+  click to open the fleet; refreshes on its own.
+- ~~**Activity-bar presence**~~ — **landed**. A 🪓 icon opens a compact
+  sidebar Fleet view (squares + counts); click a row to launch the full
+  three-column panel. Fell right from the sidebar, too.
 - **More actions on the squares** — open in new window, rebase onto master, and
   **prune** the loose-branch understory.
 - ~~**`lj`** — a thin CLI sharing the same core.~~ **Landed** — see above.
-  Next for it: `lj park <wt>` (park to a preserve branch) and a `lj open <wt>`
-  hand-off to the editor.
-- **Status bar** — `54 worktrees · 3 dirty · 7 ahead`, ambient.
+  Next for it: `lj park <wt>` and `lj open <wt>`.
 - **Branch hygiene** — surface and sweep loose `backup/*`, `wip/stash-*`, and
   orphaned agent branches.
 

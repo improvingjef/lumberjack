@@ -29,6 +29,24 @@
     "lj": "./out/cli.js"
   },
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "lumberjack",
+          "title": "Lumberjack",
+          "icon": "media/lumberjack.svg"
+        }
+      ]
+    },
+    "views": {
+      "lumberjack": [
+        {
+          "type": "webview",
+          "id": "lumberjack.fleetView",
+          "name": "Fleet"
+        }
+      ]
+    },
     "commands": [
       {
         "command": "lumberjack.open",
@@ -61,6 +79,11 @@
           "type": "string",
           "default": "",
           "description": "Trunk branch to color against. Empty = auto-detect (master, then main)."
+        },
+        "lumberjack.statusBarRefreshSeconds": {
+          "type": "number",
+          "default": 20,
+          "description": "How often (seconds) the status-bar tile re-reads the fleet. 0 disables the periodic refresh."
         }
       }
     }
@@ -69,11 +92,16 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/*.test.js"
+    "test": "npm run compile && node --test test/*.test.js",
+    "test:integration": "npm run compile && vscode-test"
   },
   "devDependencies": {
+    "@types/mocha": "^10.0.6",
     "@types/node": "^20.11.0",
     "@types/vscode": "^1.85.0",
+    "@vscode/test-cli": "^0.0.10",
+    "@vscode/test-electron": "^2.4.1",
+    "mocha": "^10.4.0",
     "typescript": "^5.4.0"
   }
 }

@@ -9,7 +9,7 @@ function nonce(): string {
   return s;
 }
 
-export function fleetHtml(): string {
+export function fleetHtml(compact = false): string {
   const n = nonce();
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
@@ -54,6 +54,10 @@ export function fleetHtml(): string {
   .wipfile{padding:2px 0;opacity:.85;cursor:pointer;word-break:break-all}
   .wipfile:hover{opacity:1;text-decoration:underline}
   .hint{opacity:.6;margin-bottom:8px}
+  body[data-compact] .mid,body[data-compact] .right,body[data-compact] .legend{display:none}
+  body[data-compact] .nm{min-width:0;max-width:none}
+  body[data-compact] header{padding:6px 10px}
+  body[data-compact] .filter{margin-left:0;flex:1} body[data-compact] .filter input{width:100%}
   .axe{opacity:0;cursor:pointer;margin-left:6px;flex:none;user-select:none;transition:opacity .1s}
   .row:hover .axe{opacity:.55} .axe:hover{opacity:1;transform:scale(1.15)}
   .row.falling{transform-origin:left bottom;
@@ -62,7 +66,7 @@ export function fleetHtml(): string {
   @keyframes ljrise{from{opacity:0;transform:translateY(-20px) scaleY(.5)}to{opacity:1;transform:none}}
   .row.rising{transform-origin:left bottom;animation:ljrise .42s cubic-bezier(.22,1,.36,1)}
 </style></head>
-<body>
+<body${compact ? " data-compact" : ""}>
 <header>
   <h1>🪓 worktree fleet</h1>
   <div class="legend">
@@ -80,6 +84,7 @@ export function fleetHtml(): string {
 </div>
 <script nonce="${n}">
 const vscode = acquireVsCodeApi();
+const COMPACT = ${compact};
 let DATA = {worktrees:[],branches:[]};
 let selRow=null, selCmt=-1, selRowObj=null, pendingRise=null;
 const $=id=>document.getElementById(id);
@@ -126,6 +131,7 @@ function draw(f){
     br.forEach(r=>left.appendChild(rowEl(r,'b')));}
 }
 function selectRow(r,id){
+  if(COMPACT){ selRow=id; selRowObj=r; draw(q.value.trim().toLowerCase()); vscode.postMessage({type:'openFull',name:r.name}); return; }
   selRow=id; selRowObj=r; selCmt=-1; q.blur(); mid.classList.add('open'); right.classList.remove('open');
   let h='<h2>'+esc(r.name)+'</h2><div class="rbranch">'+esc(r.branch)+'<br>'+esc(r.path)+'</div>';
   if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on master</div>';
