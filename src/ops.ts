@@ -6,6 +6,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { unlinkSync } from "fs";
 import { trunkBranch } from "./git";
+import { assessSafety } from "./core";
 
 function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -39,8 +40,35 @@ export async function assess(repo: string, wtPath: string, trunk?: string): Prom
   try { ahead = parseInt((await git(wtPath, ["rev-list", "--count", `${t}..HEAD`])).trim(), 10) || 0; } catch {}
   try { porc = await git(wtPath, ["status", "--porcelain"]); } catch {}
   try { sha = (await git(wtPath, ["rev-parse", "HEAD"])).trim(); } catch {}
-  const trackedWip = porc.split("\n").filter(Boolean).some((l) => !l.startsWith("??"));
-  return { ahead, trackedWip, sha, safe: ahead === 0 && !trackedWip };
+  const { trackedWip, safe } = assessSafety(ahead, porc.split("\n"));
+  return { ahead, trackedWip, sha, safe };
+}
+
+export interface TreeRef { path: string; branch: string; name: string; }
+
+/** Fell every listed tree that is still safe; returns restore tokens for those felled. */
+export async function fellMany(repo: string, trees: TreeRef[]): Promise<RestoreToken[]> {
+  const tokens: RestoreToken[] = [];
+  for (const t of trees) {
+    const a = await assess(repo, t.path);
+    if (!a.safe) continue; // only fell what's still safe
+    try { tokens.push(await fell(repo, t.path, t.branch && t.branch !== "(detached)" ? t.branch : null)); } catch {}
+  }
+  return tokens;
+}
+
+/** Restore every token from a fellMany (undo-all). */
+export async function unfellMany(repo: string, tokens: RestoreToken[]): Promise<void> {
+  for (const t of tokens) { try { await unfell(repo, t); } catch {} }
+}
+
+/** Park every listed tree's WIP onto one shared review branch; returns how many succeeded. */
+export async function salvageMany(repo: string, trees: TreeRef[], preserveBranch: string): Promise<number> {
+  let n = 0;
+  for (const t of trees) {
+    try { await salvage(repo, t.path, preserveBranch, `salvage: preserve ${t.name} (lumberjack)`); n++; } catch {}
+  }
+  return n;
 }
 
 /** Fell a worktree: capture its HEAD, remove the tree, delete its branch. */

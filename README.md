@@ -92,25 +92,30 @@ touches the main worktree or the one you're standing in.
 
 ## Testing
 
-Node's built-in runner (no extra deps), exercising the real logic against
-**real throwaway git repos** — git is the oracle:
+Node's built-in runner (no test framework), in three explicit tiers:
 
 ```bash
-npm test
+npm run test:unit    # fast base — no git, no fs, no VS Code (~0.5s)
+npm run test:git     # integration — real throwaway git repos (git is the oracle)
+npm test             # both
+npm run test:integration   # extension host in a real VS Code (@vscode/test-electron)
 ```
 
-- `git.ts` — trunk detection (master/main), ahead/dirty/on-trunk coloring,
-  attention sort, loose-branch surfacing, lean mode.
-- `ops.ts` — the load-bearing safety: `assess` (safe vs. unsafe), the
-  **fell → unfell round-trip restores tree + branch + content**, detached
-  worktrees, and `salvage` (tracked + untracked WIP snapshotted onto a preserve
-  branch, worktree untouched, history appended not clobbered).
-- `webview.ts` — the page's hooks and a fresh CSP nonce per render.
-
-Plus **extension-host smoke tests** (`npm run test:integration`) via
-`@vscode/test-electron`: they launch a real VS Code, activate the extension,
-and assert its commands register and run. Kept separate from the fast unit
-suite (which needs no VS Code).
+- **Unit (`test/*.test.js`)** — the pure domain core, tested in microseconds:
+  - `core.ts` — classification (needs/wip/dead), aging, fell-safety, porcelain
+    & worktree-list parsing, sort, summary. The single source of truth; the
+    view and the git layer both derive from it.
+  - `webview` — the page rendered in jsdom and driven by the exact messages the
+    host posts: navigation (a click lands on *that* worktree, collapsed
+    sections reveal), the fell/salvage actions, and a fresh CSP nonce per render.
+- **Git integration (`test/git/*.test.js`)** — against real repos:
+  - `gather` — trunk detection (master/main), coloring, sort, loose branches.
+  - `ops` — the load-bearing safety: `assess`, the **fell → unfell round-trip
+    restores tree + branch + content**, detached worktrees, `salvage`
+    (tracked + untracked WIP onto a preserve branch, worktree untouched, history
+    appended), and the batch `fellMany` (skips unsafe) / `salvageMany`.
+- **Host smoke (`test/integration/`)** — launches a real VS Code, activates,
+  asserts commands register and run.
 
 ## Roadmap
 

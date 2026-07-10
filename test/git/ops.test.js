@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const { makeRepo, commit, wt, wtDetached, write, cleanup, g } = require("./helpers");
-const ops = require("../out/ops.js");
+const ops = require("../../out/ops.js");
 
 const hasWorktree = (dir, p) => g(dir, "worktree", "list", "--porcelain").includes("worktree " + p);
 const hasBranch = (dir, b) => g(dir, "branch", "--list", b).trim() !== "";

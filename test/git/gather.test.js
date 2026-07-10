@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert");
 const { makeRepo, commit, wt, write, cleanup, g } = require("./helpers");
-const { gatherFleet, trunkBranch } = require("../out/git.js");
+const { gatherFleet, trunkBranch } = require("../../out/git.js");
 
 const byName = (fleet, name) => fleet.worktrees.find((r) => r.name === name);
 

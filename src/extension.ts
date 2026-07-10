@@ -118,11 +118,10 @@ export function activate(context: vscode.ExtensionContext) {
   async function salvageGroup(m: any) {
     const repo = repoRoot();
     if (!repo) return;
-    const trees = (m.trees ?? []) as { path: string; name: string }[];
+    const trees = (m.trees ?? []) as ops.TreeRef[];
     if (!trees.length) return;
     const branch = salvageBranch();
-    let n = 0;
-    for (const t of trees) { try { await ops.salvage(repo, t.path, branch, `salvage: preserve ${t.name} (lumberjack)`); n++; } catch {} }
+    const n = await ops.salvageMany(repo, trees, branch);
     vscode.window.showInformationMessage(`Salvaged ${n} worktree(s) → ${branch} for review`);
     await refresh(targets());
   }
@@ -131,20 +130,16 @@ export function activate(context: vscode.ExtensionContext) {
   async function fellGroup(m: any) {
     const repo = repoRoot();
     if (!repo) return;
-    const trees = (m.trees ?? []) as { path: string; branch: string; name: string }[];
+    const trees = (m.trees ?? []) as ops.TreeRef[];
     if (!trees.length) return;
     const pick = await vscode.window.showWarningMessage(
       `Fell all ${trees.length} deadwood?`, { modal: true, detail: trees.map((t) => t.name).join(", ") }, `Fell ${trees.length}`);
     if (!pick) return;
-    const tokens: ops.RestoreToken[] = [];
-    for (const t of trees) {
-      const a = await ops.assess(repo, t.path);
-      if (!a.safe) continue; // guard: only fell what's still safe
-      try { tokens.push(await ops.fell(repo, t.path, t.branch && t.branch !== "(detached)" ? t.branch : null)); broadcast({ type: "felled", path: t.path }); } catch {}
-    }
+    const tokens = await ops.fellMany(repo, trees);
+    tokens.forEach((t) => broadcast({ type: "felled", path: t.path }));
     await updateStatus();
     const undo = await vscode.window.showInformationMessage(`🪓 Felled ${tokens.length} deadwood`, "Undo");
-    if (undo === "Undo") { for (const tk of tokens) { try { await ops.unfell(repo, tk); } catch {} } await refresh(targets()); }
+    if (undo === "Undo") { await ops.unfellMany(repo, tokens); await refresh(targets()); }
   }
 
   async function fellWorktree(m: any) {

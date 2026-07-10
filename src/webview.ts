@@ -84,7 +84,6 @@ export function fleetHtml(compact = false): string {
 <script nonce="${n}">
 const vscode = acquireVsCodeApi();
 const COMPACT = ${compact};
-const AMBER_DAYS = 5;
 let DATA = {worktrees:[],branches:[]};
 let selRow=null, selRowObj=null, selCmt=-1, pendingRise=null, cursor=-1, loaded=false;
 let flat=[];                       // visible rows in draw order: {el,r,gid}
@@ -94,11 +93,8 @@ const $=id=>document.getElementById(id);
 const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$('rightpad'),q=$('q'),summary=$('summary');
 const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML;};
 
-const isAmber=r=>r.dirty && r.age>=AMBER_DAYS;
-// needs you: has unmerged commits (review/land) · wip: ONLY uncommitted WIP
-// (salvage for review) · dead: landed & clean (fell)
-function groupOf(r){ if(r.ahead>0) return 'needs'; if(r.dirty) return 'wip'; return 'dead'; }
-
+// grouping + aging are stamped on each row by the host (see core.ts) — the
+// view carries no domain logic, it just reads r.group and r.amber.
 function squares(r){
   // always reserve the WIP slot so commit squares line up in a column
   let h = r.dirty ? '<span class="sq blue" title="uncommitted WIP"></span>' : '<span class="sq"></span>';
@@ -109,9 +105,9 @@ function squares(r){
 }
 function rowEl(r,gid){
   const el=document.createElement('div'), id=gid+':'+r.name;
-  el.className='row'+(selRow===id?' sel':'')+(isAmber(r)?' amber':'');
+  el.className='row'+(selRow===id?' sel':'')+(r.amber?' amber':'');
   el.dataset.path=r.path;
-  const age = isAmber(r) ? '<span class="agetag" title="untouched '+Math.floor(r.age)+' days">'+Math.floor(r.age)+'d</span>' : '';
+  const age = r.amber ? '<span class="agetag" title="untouched '+Math.floor(r.age)+' days">'+Math.floor(r.age)+'d</span>' : '';
   const acts = gid==='w' ? '<span class="acts">'
     + '<span class="act" data-a="open" title="open the worktree">↗</span>'
     + (r.dirty ? '<span class="act" data-a="salvage" title="park WIP to the salvage branch">💾</span>' : '')
@@ -149,11 +145,11 @@ function render(){
   const f=q.value.trim().toLowerCase();
   const match=r=>!f||r.name.toLowerCase().includes(f);
   const wt=DATA.worktrees.filter(match);
-  const needs=wt.filter(r=>groupOf(r)==='needs');
-  const wip=wt.filter(r=>groupOf(r)==='wip');
-  const dead=wt.filter(r=>groupOf(r)==='dead');
+  const needs=wt.filter(r=>r.group==='needs');
+  const wip=wt.filter(r=>r.group==='wip');
+  const dead=wt.filter(r=>r.group==='dead');
   const br=DATA.branches.filter(match);
-  const aging=wt.filter(isAmber).length;
+  const aging=wt.filter(r=>r.amber).length;
   summary.innerHTML='<b>'+needs.length+'</b> need you · <b>'+wip.length+'</b> uncommitted · <b>'
     +dead.length+'</b> deadwood · <b>'+br.length+'</b> understory'
     +(aging?' · <span class="amberc"><b>'+aging+'</b> aging</span>':'');
@@ -174,7 +170,7 @@ function selectByPath(p){ const r=DATA.worktrees.find(x=>x.path===p); if(r&&!COM
 function selectRow(r,id){
   if(COMPACT){ selRow=id; selRowObj=r; render(); vscode.postMessage({type:'openFull',name:r.name,path:r.path}); return; }
   selRow=id; selRowObj=r; selCmt=-1; q.blur();
-  if(r.kind==='worktree') collapsed[groupOf(r)]=false; // reveal it in the left column
+  if(r.kind==='worktree'&&r.group) collapsed[r.group]=false; // reveal it in the left column
   mid.classList.add('open'); right.classList.remove('open');
   let h='<h2>'+esc(r.name)+'</h2><div class="rbranch">'+esc(r.branch)+'<br>'+esc(r.path)+'</div>';
   if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on the trunk</div>';

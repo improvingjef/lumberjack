@@ -5,6 +5,7 @@ const test = require("node:test");
 const assert = require("node:assert");
 const { JSDOM } = require("jsdom");
 const { fleetHtml } = require("../out/webview.js");
+const core = require("../out/core.js");
 
 function mount(compact) {
   const posted = [];
@@ -19,11 +20,18 @@ function mount(compact) {
   return { w, doc: w.document, posted, post: (m) => w.dispatchEvent(new w.MessageEvent("message", { data: m })) };
 }
 
-const wt = (name, path, ahead) => ({
-  kind: "worktree", name, branch: name, path, ahead, overflow: 0,
-  dirty: false, trackedWip: false, wip: [], age: 0,
-  commits: [{ sha: name + "1", short: name + "1", subj: name + " work", onMaster: false, date: 0, files: [], filesOverflow: 0 }],
-});
+// build a row the way the host does — group/amber stamped by core, so the
+// tests exercise the real classification, not a hand-set field
+const wt = (name, path, ahead, dirty = false) => {
+  const r = {
+    kind: "worktree", name, branch: name, path, ahead, overflow: 0,
+    dirty, trackedWip: dirty, wip: dirty ? [" M " + name + ".txt"] : [], age: 0,
+    commits: [{ sha: name + "1", short: name + "1", subj: name + " work", onMaster: false, date: 0, files: [], filesOverflow: 0 }],
+  };
+  r.group = core.classify(r);
+  r.amber = core.isAmber(r);
+  return r;
+};
 const FLEET = { worktrees: [wt("alpha", "/wt/alpha", 1), wt("beta", "/wt/beta", 2)], branches: [] };
 
 test("panel: a 'select' focuses THAT worktree's view (mid column opens on it)", () => {
@@ -77,7 +85,7 @@ test("deadwood header exposes a fell-all axe that posts fellGroup", () => {
 
 test("ahead==0 + dirty worktrees group under 'uncommitted wip' with salvage-all", () => {
   const { doc, posted, post } = mount(false);
-  const w = wt("d1", "/wt/d1", 0); w.dirty = true; w.wip = [" M a.txt"];
+  const w = wt("d1", "/wt/d1", 0, true);
   post({ type: "data", fleet: { worktrees: [w], branches: [] } });
   const hdr = [...doc.querySelectorAll(".shdr")].find((h) => /uncommitted/i.test(h.textContent));
   assert.ok(hdr, "uncommitted-wip section present");
@@ -89,7 +97,7 @@ test("ahead==0 + dirty worktrees group under 'uncommitted wip' with salvage-all"
 
 test("a wip row offers a standalone salvage action (not only fell)", () => {
   const { doc, posted, post } = mount(false);
-  const w = wt("d1", "/wt/d1", 0); w.dirty = true; w.wip = [" M a.txt"];
+  const w = wt("d1", "/wt/d1", 0, true);
   post({ type: "data", fleet: { worktrees: [w], branches: [] } });
   const act = doc.querySelector('.act[data-a="salvage"]');
   assert.ok(act, "salvage action present on the dirty row");

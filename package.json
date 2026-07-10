@@ -2,7 +2,7 @@
   "name": "lumberjack",
   "displayName": "Lumberjack",
   "description": "A glance tool for your git worktree fleet — colored-square status at a glance, drill into commits and files, with native diff and source.",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "improvingjef",
   "license": "MIT",
   "repository": {
@@ -94,7 +94,9 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./",
     "watch": "tsc -watch -p ./",
-    "test": "npm run compile && node --test test/*.test.js",
+    "test": "npm run compile && node --test test/*.test.js test/git/*.test.js",
+    "test:unit": "npm run compile && node --test test/*.test.js",
+    "test:git": "npm run compile && node --test test/git/*.test.js",
     "test:integration": "npm run compile && vscode-test"
   },
   "devDependencies": {
