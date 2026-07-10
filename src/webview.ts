@@ -93,8 +93,9 @@ const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$
 function esc(s){const d=document.createElement('div');d.textContent=s;return d.innerHTML;}
 
 function squares(r){
-  let h='';
-  if(r.dirty) h+='<span class="sq blue" title="uncommitted WIP"></span>';
+  // always reserve the WIP slot (empty transparent square when clean) so the
+  // commit squares line up in a column across every row
+  let h = r.dirty ? '<span class="sq blue" title="uncommitted WIP"></span>' : '<span class="sq"></span>';
   for(const c of r.commits){const cls=c.onMaster?'green':'red';
     h+='<span class="sq '+cls+'" title="'+esc(c.short+' '+c.subj)+'"></span>';}
   if(r.overflow) h+='<span class="ovf">+'+r.overflow+'</span>';

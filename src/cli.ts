@@ -46,8 +46,8 @@ async function mainWorktree(repo: string): Promise<string> {
 }
 
 function squares(r: Row): string {
-  let s = "";
-  if (r.dirty) s += C.blue + "■" + C.reset;
+  // reserve the WIP slot (a blank when clean) so commit squares line up
+  let s = r.dirty ? C.blue + "■" + C.reset : " ";
   for (const c of r.commits) s += (c.onMaster ? C.green : C.red) + "■" + C.reset;
   if (r.overflow) s += C.dim + "+" + r.overflow + C.reset;
   return s;
