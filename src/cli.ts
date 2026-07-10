@@ -3,11 +3,14 @@
 //
 //   lj                 status table of the worktree fleet
 //   lj branches        list loose branches (no worktree)
-//   lj reap            preview landed + fully-clean worktrees to remove
-//   lj reap --go       remove them (worktree + merged branch)
-//   lj reap --untracked-ok   also reap worktrees dirty ONLY from untracked scratch
+//   lj fell            preview the deadwood (landed + clean worktrees) to fell
+//   lj fell --go       fell them (remove worktree + delete merged branch)
+//   lj fell --brush    also fell worktrees tangled ONLY in untracked brush (scratch)
 //   lj -C <path>       operate on a different repo (default: cwd's repo)
 //   lj help
+//
+// Lexicon: you FELL trees (worktrees) and PRUNE branches — the verb is
+// disambiguated by the git noun it acts on. Deadwood = landed, clean, fellable.
 
 import { execFile } from "child_process";
 import { gatherFleet, Row } from "./git";
@@ -96,7 +99,7 @@ async function cmdStatus(repo: string) {
   console.log(
     `\n  ${C.dim}legend:${C.reset} ${C.blue}■${C.reset} WIP  ` +
     `${C.red}■${C.reset} off master  ${C.green}■${C.reset} on master   ` +
-    `${C.dim}lj reap  ·  lj branches${C.reset}\n`
+    `${C.dim}lj fell  ·  lj branches${C.reset}\n`
   );
 }
 
@@ -107,25 +110,25 @@ async function cmdBranches(repo: string) {
   console.log("");
 }
 
-async function cmdReap(repo: string, go: boolean, untrackedOk: boolean) {
+async function cmdFell(repo: string, go: boolean, brush: boolean) {
   const fleet = await gatherFleet(repo, { window: 1, maxFiles: 0, includeBranches: false });
   const main = await mainWorktree(repo);
   const here = (await git(process.cwd(), ["rev-parse", "--show-toplevel"]).catch(() => "")).trim();
 
-  const candidates = fleet.worktrees.filter((r) => {
+  const deadwood = fleet.worktrees.filter((r) => {
     if (r.path === main || r.path === here) return false; // never the main tree or the one we stand in
     if (r.ahead !== 0) return false;
-    if (!r.dirty) return true; // fully clean, landed
-    if (untrackedOk) return r.wip.every((l) => l.startsWith("??")); // dirty only from untracked scratch
+    if (!r.dirty) return true; // fully clean, landed — standing deadwood
+    if (brush) return r.wip.every((l) => l.startsWith("??")); // tangled only in untracked brush
     return false;
   });
 
-  if (!candidates.length) {
-    console.log(`\n  nothing to reap (${untrackedOk ? "landed or untracked-only" : "landed + clean"}).\n`);
+  if (!deadwood.length) {
+    console.log(`\n  no deadwood to fell (${brush ? "landed or brush-tangled" : "landed + clean"}).\n`);
     return;
   }
-  console.log(`\n${go ? C.bold + "reaping" + C.reset : "would reap"} ${candidates.length} worktree(s):\n`);
-  for (const r of candidates) {
+  console.log(`\n${go ? C.bold + "felling" + C.reset : "would fell"} ${deadwood.length} tree(s):\n`);
+  for (const r of deadwood) {
     const branch = r.branch && r.branch !== "(detached)" ? r.branch : "(detached)";
     if (go) {
       await git(repo, ["worktree", "remove", "--force", r.path]);
@@ -137,9 +140,9 @@ async function cmdReap(repo: string, go: boolean, untrackedOk: boolean) {
   }
   if (go) {
     await git(repo, ["worktree", "prune"]);
-    console.log(`\n  reaped ${candidates.length}.\n`);
+    console.log(`\n  felled ${deadwood.length}.\n`);
   } else {
-    console.log(`\n  ${C.dim}re-run with ${C.reset}${C.bold}--go${C.reset}${C.dim} to remove them.${C.reset}\n`);
+    console.log(`\n  ${C.dim}re-run with ${C.reset}${C.bold}--go${C.reset}${C.dim} to fell them.${C.reset}\n`);
   }
 }
 
@@ -147,13 +150,15 @@ function help() {
   console.log(`
 ${C.bold}🪓 lj${C.reset} — tend your git worktree fleet
 
-  ${C.bold}lj${C.reset}                     status table of the fleet
-  ${C.bold}lj branches${C.reset}            list loose branches (no worktree)
-  ${C.bold}lj reap${C.reset}                preview landed + fully-clean worktrees to remove
-  ${C.bold}lj reap --go${C.reset}           remove them (worktree dir + merged branch)
-  ${C.bold}lj reap --untracked-ok${C.reset} also reap worktrees dirty only from untracked scratch
-  ${C.bold}lj -C <path>${C.reset}           operate on another repo (default: cwd's repo)
-  ${C.bold}lj help${C.reset}                this
+  ${C.bold}lj${C.reset}                  status table of the fleet
+  ${C.bold}lj branches${C.reset}         list loose branches (no worktree)
+  ${C.bold}lj fell${C.reset}             preview the deadwood (landed + clean worktrees)
+  ${C.bold}lj fell --go${C.reset}        fell them (remove worktree + delete merged branch)
+  ${C.bold}lj fell --brush${C.reset}     also fell trees tangled only in untracked brush
+  ${C.bold}lj -C <path>${C.reset}        operate on another repo (default: cwd's repo)
+  ${C.bold}lj help${C.reset}             this
+
+  ${C.dim}you ${C.reset}fell${C.dim} trees (worktrees), you ${C.reset}prune${C.dim} branches. deadwood = fellable.${C.reset}
 `);
 }
 
@@ -170,7 +175,7 @@ async function main() {
 
   if (cmd === "status") return cmdStatus(repo);
   if (cmd === "branches") return cmdBranches(repo);
-  if (cmd === "reap") return cmdReap(repo, flags.has("--go"), flags.has("--untracked-ok") || flags.has("--detritus"));
+  if (cmd === "fell") return cmdFell(repo, flags.has("--go"), flags.has("--brush") || flags.has("--untracked-ok"));
   console.error(`lj: unknown command '${cmd}'. Try 'lj help'.`);
   process.exit(1);
 }

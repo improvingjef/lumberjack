@@ -59,24 +59,29 @@ node out/cli.js            # or: npm link  →  lj
 ```
 
 ```
-lj                     status table of the fleet (colored squares in your terminal)
-lj branches            list loose branches (no worktree)
-lj reap                preview landed + fully-clean worktrees to remove
-lj reap --go           remove them (worktree dir + merged branch)
-lj reap --untracked-ok also reap worktrees dirty ONLY from untracked scratch
-lj -C <path>           operate on another repo (default: cwd's repo)
+lj                  status table of the fleet (colored squares in your terminal)
+lj branches         list loose branches (no worktree)
+lj fell             preview the deadwood (landed + clean worktrees) to fell
+lj fell --go        fell them (remove worktree + delete merged branch)
+lj fell --brush     also fell trees tangled only in untracked brush (scratch)
+lj -C <path>        operate on another repo (default: cwd's repo)
 lj help
 ```
 
-Reaping previews by default; nothing is deleted without `--go`. It never
+**Lexicon.** You **fell** trees (worktrees) and **prune** branches — the verb
+is disambiguated by the git noun it acts on, so it stays clear even while it's
+cheeky. **Deadwood** is the fellable set (landed + clean); **brush** is
+untracked scratch; **salvage** preserves WIP before it's lost.
+
+Felling previews by default; nothing is removed without `--go`. It never
 touches the main worktree or the one you're standing in.
 
 ## Roadmap
 
 - **Actions on the squares** — right-click a worktree → open in new window,
-  rebase onto master, park to a preserve branch, or **reap** (remove the
-  worktree + delete the merged branch). The reaping logic already exists as
-  scripts; the extension will shell out to it.
+  rebase onto master, **salvage** (park WIP to a preserve branch), or **fell**
+  (remove the worktree + delete the merged branch). Undoable felling is the
+  headline: fell fearlessly, `Undo` restores it from the reflog.
 - ~~**`lj`** — a thin CLI sharing the same core.~~ **Landed** — see above.
   Next for it: `lj park <wt>` (park to a preserve branch) and a `lj open <wt>`
   hand-off to the editor.
