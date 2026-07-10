@@ -34,6 +34,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   let panel: vscode.WebviewPanel | undefined;
   let sidebar: vscode.WebviewView | undefined;
+  let pendingSelect: string | undefined; // worktree path to focus once the panel loads
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = "lumberjack.open";
   context.subscriptions.push(status);
@@ -62,7 +63,8 @@ export function activate(context: vscode.ExtensionContext) {
     else views.forEach((w) => w.postMessage({ type: "loading" }));
 
     const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
-    views.forEach((w) => w.postMessage({ type: "worktrees", worktrees }));
+    const select = pendingSelect; pendingSelect = undefined;
+    views.forEach((w) => w.postMessage({ type: "worktrees", worktrees, select }));
     paintStatus({ worktrees, branches: cached?.branches ?? [] });
 
     const branches = await gatherBranches(repo, { window: commitWindow(), maxFiles: 0, trunk });
@@ -134,7 +136,14 @@ export function activate(context: vscode.ExtensionContext) {
       const repo = repoRoot();
       if (msg.type === "ready" || msg.type === "refresh") return refresh([view]);
       if (!repo) return;
-      if (msg.type === "openFull") return vscode.commands.executeCommand("lumberjack.open");
+      if (msg.type === "openFull") {
+        const existed = !!panel;
+        await vscode.commands.executeCommand("lumberjack.open");
+        // already-open panel has data → focus now; fresh panel → deliver via its load
+        if (existed) panel?.webview.postMessage({ type: "select", path: msg.path });
+        else pendingSelect = msg.path;
+        return;
+      }
       if (msg.type === "reqFiles") return sendFiles(view, repo, msg.sha);
       if (msg.type === "openSource") return openSource(msg, repo);
       if (msg.type === "diffCommit") return diffCommit(repo, msg);

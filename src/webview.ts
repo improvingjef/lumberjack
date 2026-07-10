@@ -148,8 +148,9 @@ function render(){
   if(!flat.length && !f) left.innerHTML+='<div class="empty">the stand is clear. nothing needs you.</div>';
 }
 
+function selectByPath(p){ const r=DATA.worktrees.find(x=>x.path===p); if(r&&!COMPACT) selectRow(r,'w:'+r.name); }
 function selectRow(r,id){
-  if(COMPACT){ selRow=id; selRowObj=r; render(); vscode.postMessage({type:'openFull',name:r.name}); return; }
+  if(COMPACT){ selRow=id; selRowObj=r; render(); vscode.postMessage({type:'openFull',name:r.name,path:r.path}); return; }
   selRow=id; selRowObj=r; selCmt=-1; q.blur(); mid.classList.add('open'); right.classList.remove('open');
   let h='<h2>'+esc(r.name)+'</h2><div class="rbranch">'+esc(r.branch)+'<br>'+esc(r.path)+'</div>';
   if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on the trunk</div>';
@@ -211,9 +212,10 @@ q.oninput=()=>render();
 window.addEventListener('message',ev=>{const m=ev.data;
   if(m.type==='loading'){ loaded=false; render(); }
   else if(m.type==='error'){ loaded=true; left.innerHTML='<div class="empty">'+esc(m.message)+'</div>'; }
-  else if(m.type==='data'){ DATA=m.fleet; loaded=true; render(); }
-  else if(m.type==='worktrees'){ DATA.worktrees=m.worktrees; loaded=true; render(); }
+  else if(m.type==='data'){ DATA=m.fleet; loaded=true; render(); if(m.select) selectByPath(m.select); }
+  else if(m.type==='worktrees'){ DATA.worktrees=m.worktrees; loaded=true; render(); if(m.select) selectByPath(m.select); }
   else if(m.type==='branches'){ DATA.branches=m.branches; render(); }
+  else if(m.type==='select'){ selectByPath(m.path); }
   else if(m.type==='files'){ fileCache[m.sha]={files:m.files,overflow:m.overflow}; if(rightState&&rightState.sha===m.sha&&right.classList.contains('open')) selectCommit(rightState.r,rightState.i); }
   else if(m.type==='felled'){ felled(m.path); }
   else if(m.type==='restored'){ pendingRise=m.path; }});

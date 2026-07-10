@@ -2,7 +2,7 @@
   "name": "lumberjack",
   "displayName": "Lumberjack",
   "description": "A glance tool for your git worktree fleet — colored-square status at a glance, drill into commits and files, with native diff and source.",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "publisher": "improvingjef",
   "license": "MIT",
   "repository": {
@@ -103,6 +103,7 @@
     "@types/vscode": "^1.85.0",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1",
+    "jsdom": "^24.1.0",
     "mocha": "^10.4.0",
     "typescript": "^5.4.0"
   }
