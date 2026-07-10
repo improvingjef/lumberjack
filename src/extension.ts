@@ -58,13 +58,14 @@ export function activate(context: vscode.ExtensionContext) {
     const repo = repoRoot();
     if (!repo) { views.forEach((w) => w.postMessage({ type: "error", message: "No repo. Open a folder or set lumberjack.repoPath." })); return; }
 
+    const select = pendingSelect; // focus this worktree the moment there's data — even from cache
     const cached = context.globalState.get<Fleet>(cacheKey(repo));
-    if (cached) views.forEach((w) => w.postMessage({ type: "data", repo, fleet: cached, cached: true }));
+    if (cached) views.forEach((w) => w.postMessage({ type: "data", repo, fleet: cached, cached: true, select }));
     else views.forEach((w) => w.postMessage({ type: "loading" }));
 
     const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
-    const select = pendingSelect; pendingSelect = undefined;
     views.forEach((w) => w.postMessage({ type: "worktrees", worktrees, select }));
+    pendingSelect = undefined;
     paintStatus({ worktrees, branches: cached?.branches ?? [] });
 
     const branches = await gatherBranches(repo, { window: commitWindow(), maxFiles: 0, trunk });
@@ -100,6 +101,50 @@ export function activate(context: vscode.ExtensionContext) {
   async function sendFiles(view: vscode.Webview, repo: string, sha: string) {
     const { files, overflow } = await commitFiles(repo, sha, 80);
     view.postMessage({ type: "files", sha, files, overflow });
+  }
+
+  // Park a worktree's WIP onto the shared branch for review — no fell.
+  async function salvageOnly(m: any) {
+    const repo = repoRoot();
+    if (!repo) return;
+    try {
+      const c = await ops.salvage(repo, m.path, salvageBranch(), `salvage: preserve ${m.name} (lumberjack)`);
+      vscode.window.showInformationMessage(`Salvaged ${m.name} → ${salvageBranch()} @ ${c.slice(0, 9)} for review`);
+      await refresh(targets());
+    } catch (e: any) { vscode.window.showErrorMessage(`Salvage failed: ${e.message}`); }
+  }
+
+  // Salvage-all: park every listed worktree's WIP onto one shared review branch.
+  async function salvageGroup(m: any) {
+    const repo = repoRoot();
+    if (!repo) return;
+    const trees = (m.trees ?? []) as { path: string; name: string }[];
+    if (!trees.length) return;
+    const branch = salvageBranch();
+    let n = 0;
+    for (const t of trees) { try { await ops.salvage(repo, t.path, branch, `salvage: preserve ${t.name} (lumberjack)`); n++; } catch {} }
+    vscode.window.showInformationMessage(`Salvaged ${n} worktree(s) → ${branch} for review`);
+    await refresh(targets());
+  }
+
+  // Fell-all deadwood: one confirm, felled together, one Undo restores them all.
+  async function fellGroup(m: any) {
+    const repo = repoRoot();
+    if (!repo) return;
+    const trees = (m.trees ?? []) as { path: string; branch: string; name: string }[];
+    if (!trees.length) return;
+    const pick = await vscode.window.showWarningMessage(
+      `Fell all ${trees.length} deadwood?`, { modal: true, detail: trees.map((t) => t.name).join(", ") }, `Fell ${trees.length}`);
+    if (!pick) return;
+    const tokens: ops.RestoreToken[] = [];
+    for (const t of trees) {
+      const a = await ops.assess(repo, t.path);
+      if (!a.safe) continue; // guard: only fell what's still safe
+      try { tokens.push(await ops.fell(repo, t.path, t.branch && t.branch !== "(detached)" ? t.branch : null)); broadcast({ type: "felled", path: t.path }); } catch {}
+    }
+    await updateStatus();
+    const undo = await vscode.window.showInformationMessage(`🪓 Felled ${tokens.length} deadwood`, "Undo");
+    if (undo === "Undo") { for (const tk of tokens) { try { await ops.unfell(repo, tk); } catch {} } await refresh(targets()); }
   }
 
   async function fellWorktree(m: any) {
@@ -150,6 +195,9 @@ export function activate(context: vscode.ExtensionContext) {
       if (msg.type === "diffWip") return diffWip(msg);
       if (msg.type === "dive") return dive(msg);
       if (msg.type === "fell") return fellWorktree(msg);
+      if (msg.type === "salvage") return salvageOnly(msg);
+      if (msg.type === "salvageGroup") return salvageGroup(msg);
+      if (msg.type === "fellGroup") return fellGroup(msg);
     };
   }
 

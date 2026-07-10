@@ -51,8 +51,9 @@ export function fleetHtml(compact = false): string {
   .sqs{display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start;flex:1}
   .ovf{opacity:.55;font-size:11px;margin-left:4px}
   .agetag{opacity:.7;color:var(--amber);font-size:11px;margin-left:6px;flex:none}
-  .axe{opacity:0;cursor:pointer;margin-left:6px;flex:none;user-select:none;transition:opacity .1s}
-  .row:hover .axe{opacity:.55} .axe:hover{opacity:1;transform:scale(1.15)}
+  .acts{display:flex;gap:4px;margin-left:6px;flex:none;opacity:0;transition:opacity .1s}
+  .row:hover .acts{opacity:.6} .act{cursor:pointer;user-select:none;padding:0 1px} .act:hover{opacity:1;transform:scale(1.18)}
+  .hdraxe{margin-left:auto;cursor:pointer;opacity:.45;user-select:none;padding:0 2px} .hdraxe:hover{opacity:1;transform:scale(1.15)}
   .row.falling{transform-origin:left bottom;transition:transform .5s cubic-bezier(.6,.04,.98,.34),opacity .5s ease-in;
     transform:translateY(48px) rotate(7deg);opacity:0;pointer-events:none}
   @keyframes ljrise{from{opacity:0;transform:translateY(-20px) scaleY(.5)}to{opacity:1;transform:none}}
@@ -88,13 +89,15 @@ let DATA = {worktrees:[],branches:[]};
 let selRow=null, selRowObj=null, selCmt=-1, pendingRise=null, cursor=-1, loaded=false;
 let flat=[];                       // visible rows in draw order: {el,r,gid}
 const fileCache={};                // sha -> {files,overflow}
-const collapsed={needs:false,flight:true,dead:true,understory:true};
+const collapsed={needs:false,wip:false,dead:true,understory:true};
 const $=id=>document.getElementById(id);
 const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$('rightpad'),q=$('q'),summary=$('summary');
 const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML;};
 
 const isAmber=r=>r.dirty && r.age>=AMBER_DAYS;
-function groupOf(r){ if(r.dirty) return 'flight'; if(r.ahead>0) return 'needs'; return 'dead'; }
+// needs you: has unmerged commits (review/land) · wip: ONLY uncommitted WIP
+// (salvage for review) · dead: landed & clean (fell)
+function groupOf(r){ if(r.ahead>0) return 'needs'; if(r.dirty) return 'wip'; return 'dead'; }
 
 function squares(r){
   // always reserve the WIP slot so commit squares line up in a column
@@ -109,10 +112,18 @@ function rowEl(r,gid){
   el.className='row'+(selRow===id?' sel':'')+(isAmber(r)?' amber':'');
   el.dataset.path=r.path;
   const age = isAmber(r) ? '<span class="agetag" title="untouched '+Math.floor(r.age)+' days">'+Math.floor(r.age)+'d</span>' : '';
-  const axe = gid==='w' ? '<span class="axe" title="fell (f)">🪓</span>' : '';
-  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+age+axe;
+  const acts = gid==='w' ? '<span class="acts">'
+    + '<span class="act" data-a="open" title="open the worktree">↗</span>'
+    + (r.dirty ? '<span class="act" data-a="salvage" title="park WIP to the salvage branch">💾</span>' : '')
+    + '<span class="act" data-a="fell" title="fell (f)">🪓</span>'
+    + '</span>' : '';
+  el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+age+acts;
   el.onclick=()=>selectRow(r,id);
-  const ax=el.querySelector('.axe'); if(ax) ax.onclick=e=>{e.stopPropagation();fellRow(r);};
+  el.querySelectorAll('.act').forEach(a=>a.onclick=e=>{e.stopPropagation();
+    const k=a.dataset.a;
+    if(k==='fell') fellRow(r);
+    else if(k==='salvage') vscode.postMessage({type:'salvage',path:r.path,name:r.name});
+    else if(k==='open') diveRow(r);});
   if(pendingRise===r.path){el.classList.add('rising');pendingRise=null;}
   return el;
 }
@@ -124,6 +135,13 @@ function section(title,key,rows,dotColor,gid){
   hdr.innerHTML='<span class="chev">▾</span>'+(dotColor?'<span class="dot" style="background:'+dotColor+'"></span>':'')
     +'<span>'+title+'</span><span class="ct">'+rows.length+'</span>';
   hdr.onclick=()=>{collapsed[key]=!collapsed[key];render();};
+  const bulk = key==='dead' ? {icon:'🪓',type:'fellGroup',title:'fell all '+rows.length+' deadwood'}
+             : key==='wip' ? {icon:'💾',type:'salvageGroup',title:'salvage all '+rows.length+' WIP → the review branch'} : null;
+  if(bulk){
+    const a=document.createElement('span'); a.className='hdraxe'; a.title=bulk.title; a.textContent=bulk.icon;
+    a.onclick=e=>{e.stopPropagation();vscode.postMessage({type:bulk.type,trees:rows.map(r=>({path:r.path,branch:r.branch,name:r.name}))});};
+    hdr.appendChild(a);
+  }
   left.appendChild(hdr);
   if(!closed) for(const r of rows){ const el=rowEl(r,gid); left.appendChild(el); flat.push({el,r,gid}); }
 }
@@ -132,26 +150,32 @@ function render(){
   const match=r=>!f||r.name.toLowerCase().includes(f);
   const wt=DATA.worktrees.filter(match);
   const needs=wt.filter(r=>groupOf(r)==='needs');
-  const flight=wt.filter(r=>groupOf(r)==='flight');
+  const wip=wt.filter(r=>groupOf(r)==='wip');
   const dead=wt.filter(r=>groupOf(r)==='dead');
   const br=DATA.branches.filter(match);
-  const aging=flight.filter(isAmber).length;
-  summary.innerHTML='<b>'+needs.length+'</b> need you · <b>'+flight.length+'</b> in flight · <b>'
+  const aging=wt.filter(isAmber).length;
+  summary.innerHTML='<b>'+needs.length+'</b> need you · <b>'+wip.length+'</b> uncommitted · <b>'
     +dead.length+'</b> deadwood · <b>'+br.length+'</b> understory'
     +(aging?' · <span class="amberc"><b>'+aging+'</b> aging</span>':'');
   left.innerHTML=''; flat=[]; cursor=-1;
   if(!loaded){ left.innerHTML='<div class="loading"><span class="spin"></span> reading the stand…</div>'; return; }
   section('needs you','needs',needs,'var(--red)','w');
-  section('in flight','flight',flight,'var(--blue)','w');
+  section('uncommitted wip','wip',wip,'var(--blue)','w');
   section('deadwood','dead',dead,'var(--green)','w');
   section('understory — branches','understory',br,'','b');
-  if(!flat.length && !f) left.innerHTML+='<div class="empty">the stand is clear. nothing needs you.</div>';
+  if(!needs.length && !wip.length && !dead.length && !br.length){
+    const e=document.createElement('div'); e.className='empty';
+    e.textContent = f ? 'no match.' : 'the stand is clear. nothing needs you.';
+    left.appendChild(e); // appendChild, NOT innerHTML+= (which re-parses and strips handlers)
+  }
 }
 
 function selectByPath(p){ const r=DATA.worktrees.find(x=>x.path===p); if(r&&!COMPACT) selectRow(r,'w:'+r.name); }
 function selectRow(r,id){
   if(COMPACT){ selRow=id; selRowObj=r; render(); vscode.postMessage({type:'openFull',name:r.name,path:r.path}); return; }
-  selRow=id; selRowObj=r; selCmt=-1; q.blur(); mid.classList.add('open'); right.classList.remove('open');
+  selRow=id; selRowObj=r; selCmt=-1; q.blur();
+  if(r.kind==='worktree') collapsed[groupOf(r)]=false; // reveal it in the left column
+  mid.classList.add('open'); right.classList.remove('open');
   let h='<h2>'+esc(r.name)+'</h2><div class="rbranch">'+esc(r.branch)+'<br>'+esc(r.path)+'</div>';
   if(r.ahead) h+='<div class="rbranch" style="color:var(--red)">'+r.ahead+' commit(s) not on the trunk</div>';
   h+='<div class="hint">Enter dives in · click a commit for its files</div>';
@@ -164,6 +188,8 @@ function selectRow(r,id){
   midpad.querySelectorAll('.cmt[data-i]').forEach(el=>el.onclick=()=>selectCommit(r,+el.dataset.i));
   midpad.querySelectorAll('.file[data-wip]').forEach(el=>el.onclick=()=>vscode.postMessage({type:'diffWip',cwd:r.path,file:el.dataset.wip}));
   render();
+  const el=left.querySelector('.row[data-path="'+CSS.escape(r.path)+'"]');
+  if(el&&el.scrollIntoView) el.scrollIntoView({block:'nearest'});
 }
 function selectCommit(r,i){
   selCmt=i; const c=r.commits[i]; right.classList.add('open');
