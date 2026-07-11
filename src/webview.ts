@@ -9,10 +9,11 @@ function nonce(): string {
 }
 
 export function fleetHtml(compact = false): string {
+  const AXE_URI = "data:image/png;base64,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";
   const n = nonce();
   return `<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-${n}';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${n}';">
 <style>
   :root{ --blue:#3b82f6; --red:#ef4444; --green:#22c55e; --amber:#f59e0b; }
   *{box-sizing:border-box}
@@ -22,6 +23,7 @@ export function fleetHtml(compact = false): string {
   .blue{background:var(--blue)} .red{background:var(--red)} .green{background:var(--green)}
   @keyframes breathe{0%,100%{opacity:1}50%{opacity:.55}}
   .sq.blue{animation:breathe 2.6s ease-in-out infinite}
+  .axelogo{display:inline-block;width:1.05em;height:1.05em;vertical-align:-.15em;background:currentColor;-webkit-mask:url('${AXE_URI}') center/contain no-repeat;mask:url('${AXE_URI}') center/contain no-repeat}
   header{padding:9px 14px;border-bottom:1px solid var(--vscode-panel-border);display:flex;gap:10px;align-items:center;flex-wrap:wrap}
   h1{font-size:13px;margin:0;font-weight:600;white-space:nowrap}
   .summary{opacity:.85;flex:1;min-width:120px}
@@ -72,7 +74,7 @@ export function fleetHtml(compact = false): string {
 </style></head>
 <body${compact ? " data-compact" : ""}>
 <header>
-  <h1>🪓 fleet</h1>
+  <h1><span class="axelogo" aria-hidden="true"></span> fleet</h1>
   <span id="summary" class="summary">…</span>
   <span class="filter"><input id="q" placeholder="/ filter…" aria-label="Filter worktrees by name"></span>
 </header>
