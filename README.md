@@ -10,6 +10,31 @@ drill into what changed, and helps you fell the deadwood.
 
 Built for humans working *with* agents.
 
+<!-- SCREENSHOT: the three-column fleet view. Put a PNG in media/ and reference
+     it with an absolute raw-GitHub URL (the Marketplace won't render a
+     repo-relative image path):
+![Lumberjack fleet view](https://raw.githubusercontent.com/improvingjef/lumberjack/main/media/screenshot-fleet.png)
+     A short GIF of felling + Undo would sell it even harder. -->
+
+## Install
+
+**From the Marketplace** (once published):
+
+```
+ext install improvingjef.lumberjack
+```
+
+Then open the 🪓 in the activity bar, or run **Lumberjack: Open Worktree
+Fleet**. By default it surveys the first workspace folder; point it elsewhere
+with the `lumberjack.repoPath` setting.
+
+**From source** (development):
+
+```bash
+npm install && npm run compile
+# press F5 in VS Code (Run Extension), or:  code --extensionDevelopmentPath=$PWD
+```
+
 ## The glance
 
 A three-column view, colored squares carrying the state at a glance:
@@ -34,19 +59,6 @@ A three-column view, colored squares carrying the state at a glance:
 
 Live, not a snapshot — hit ↻ (or `Lumberjack: Refresh Fleet`) and it re-reads
 git.
-
-## Install / develop
-
-```bash
-npm install
-npm run compile
-# then press F5 in VS Code (Run Extension), or:
-code --extensionDevelopmentPath=$PWD
-```
-
-Run the command **Lumberjack: Open Worktree Fleet**. By default it surveys the
-first workspace folder; point it elsewhere with the `lumberjack.repoPath`
-setting.
 
 ## Felling — fearless because it's undoable
 
@@ -89,6 +101,40 @@ untracked scratch; **salvage** preserves WIP before it's lost.
 
 Felling previews by default; nothing is removed without `--go`. It never
 touches the main worktree or the one you're standing in.
+
+## Agents & MCP
+
+Lumberjack is the only thing in the stack that sees the whole swarm at once, so
+it can hand that view to the agents too.
+
+- **`lj --json`** — the entire fleet (per-worktree group / ahead / dirty / WIP
+  files / claims / commits, plus loose branches and a summary) as structured
+  data, in one call.
+- **`lj who-has <file>`** — which worktrees have uncommitted changes to a file.
+  Call it before editing a shared file to avoid colliding with another agent.
+- **`lj mcp`** — run Lumberjack as an [MCP](https://modelcontextprotocol.io)
+  server (stdio). An IDE agent then gets tools to *see and operate* the fleet:
+  `fleet_status`, `who_has`, `tend`, `claim`, `land`, `salvage`.
+
+Wire it into an MCP client:
+
+```jsonc
+// Claude Code:  claude mcp add lumberjack -- lj mcp
+// Or a client's mcp.json:
+{ "mcpServers": { "lumberjack": { "command": "lj", "args": ["mcp"] } } }
+```
+
+## Settings
+
+| setting | default | what it does |
+|---|---|---|
+| `lumberjack.repoPath` | *(workspace folder)* | the repo whose fleet to survey |
+| `lumberjack.trunk` | *(auto: master → main)* | the trunk branch to color/land against |
+| `lumberjack.commitWindow` | `14` | recent commits rendered as squares per row |
+| `lumberjack.salvageBranch` | `salvage` | the preserve branch salvage appends to |
+| `lumberjack.warmOnStartup` | `true` | interrogate the fleet in the background at startup so the first open is instant |
+| `lumberjack.cacheFreshnessSeconds` | `15` | how long a warmed cache is trusted before an open re-reads (↻ always forces) |
+| `lumberjack.statusBarRefreshSeconds` | `20` | status-tile refresh cadence (`0` disables) |
 
 ## Testing
 

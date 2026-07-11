@@ -74,7 +74,7 @@ export function fleetHtml(compact = false): string {
 <header>
   <h1>🪓 fleet</h1>
   <span id="summary" class="summary">…</span>
-  <span class="filter"><input id="q" placeholder="/ filter…"></span>
+  <span class="filter"><input id="q" placeholder="/ filter…" aria-label="Filter worktrees by name"></span>
 </header>
 <div class="wrap">
   <div class="col left" id="left"><div class="loading"><span class="spin"></span> reading the stand…</div></div>
@@ -104,10 +104,16 @@ function squares(r){
   if(r.overflow) h+='<span class="ovf">+'+r.overflow+'</span>';
   return h;
 }
+const groupLabel=g=>({needs:'needs you',wip:'uncommitted WIP',dead:'deadwood'}[g]||'branch');
 function rowEl(r,gid){
   const el=document.createElement('div'), id=gid+':'+r.name;
   el.className='row'+(selRow===id?' sel':'')+(r.amber?' amber':'');
   el.dataset.path=r.path;
+  // a11y: rows are announced (meaning not by color alone) and keyboard-activatable
+  el.setAttribute('role','button'); el.setAttribute('tabindex','0');
+  el.setAttribute('aria-label', r.name+' — '+groupLabel(r.group)+(r.ahead?', '+r.ahead+' ahead':'')
+    +(r.dirty?', uncommitted changes':'')+(r.amber?', aging '+Math.floor(r.age)+' days':'')+(r.claim?', claimed: '+r.claim:''));
+  el.onkeydown=ev=>{ if(ev.key==='Enter'||ev.key===' '){ ev.preventDefault(); selectRow(r,id); } };
   const age = r.amber ? '<span class="agetag" title="untouched '+Math.floor(r.age)+' days">'+Math.floor(r.age)+'d</span>' : '';
   const claim = r.claim ? '<span class="claim" title="'+esc(r.claim)+'">📌</span>' : '';
   const acts = gid==='w' ? '<span class="acts">'
@@ -118,6 +124,9 @@ function rowEl(r,gid){
     + '</span>' : '';
   el.innerHTML='<span class="nm" title="'+esc(r.name)+'">'+esc(r.name)+'</span><span class="sqs">'+squares(r)+'</span>'+claim+age+acts;
   el.onclick=()=>selectRow(r,id);
+  const sqsEl=el.querySelector('.sqs');
+  if(sqsEl){ const on=r.commits.filter(c=>c.onMaster).length; sqsEl.setAttribute('role','img');
+    sqsEl.setAttribute('aria-label',(r.dirty?'uncommitted changes; ':'')+(r.commits.length-on)+' commits off trunk, '+on+' on trunk'); }
   el.querySelectorAll('.act').forEach(a=>a.onclick=e=>{e.stopPropagation();
     const k=a.dataset.a;
     if(k==='fell') fellRow(r);

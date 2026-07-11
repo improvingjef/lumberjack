@@ -2,13 +2,22 @@
   "name": "lumberjack",
   "displayName": "Lumberjack",
   "description": "A glance tool for your git worktree fleet — colored-square status at a glance, drill into commits and files, with native diff and source.",
-  "version": "0.0.15",
+  "version": "0.0.16",
   "publisher": "improvingjef",
   "license": "MIT",
   "icon": "media/icon.png",
   "repository": {
     "type": "git",
     "url": "https://github.com/improvingjef/lumberjack.git"
+  },
+  "bugs": {
+    "url": "https://github.com/improvingjef/lumberjack/issues"
+  },
+  "homepage": "https://github.com/improvingjef/lumberjack#readme",
+  "qna": "marketplace",
+  "galleryBanner": {
+    "color": "#e26a4e",
+    "theme": "dark"
   },
   "engines": {
     "vscode": "^1.85.0"
