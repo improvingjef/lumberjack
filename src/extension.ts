@@ -146,7 +146,7 @@ export function activate(context: vscode.ExtensionContext) {
     try {
       const c = await ops.salvage(repo, m.path, salvageBranch(), `salvage: preserve ${m.name} (lumberjack)`);
       vscode.window.showInformationMessage(`Salvaged ${m.name} → ${salvageBranch()} @ ${c.slice(0, 9)} for review`);
-      await refresh(targets());
+      await refresh(targets(), true);
     } catch (e: any) { vscode.window.showErrorMessage(`Salvage failed: ${e.message}`); }
   }
 
@@ -159,7 +159,7 @@ export function activate(context: vscode.ExtensionContext) {
     const branch = salvageBranch();
     const n = await ops.salvageMany(repo, trees, branch);
     vscode.window.showInformationMessage(`Salvaged ${n} worktree(s) → ${branch} for review`);
-    await refresh(targets());
+    await refresh(targets(), true);
   }
 
   async function landOne(m: any) {
@@ -168,7 +168,7 @@ export function activate(context: vscode.ExtensionContext) {
     const res = await ops.land(repo, m.branch, trunkOpt());
     if (res.ok) vscode.window.showInformationMessage(`⬆ ${res.message}`);
     else vscode.window.showWarningMessage(`Couldn't land ${m.name}: ${res.message}`);
-    await refresh(targets());
+    await refresh(targets(), true);
   }
 
   async function landGroup(m: any) {
@@ -178,7 +178,7 @@ export function activate(context: vscode.ExtensionContext) {
     if (!branches.length) return;
     const { landed, skipped } = await ops.landMany(repo, branches, trunkOpt());
     vscode.window.showInformationMessage(`Landed ${landed.length}${skipped.length ? `, skipped ${skipped.length} (diverged)` : ""}`);
-    await refresh(targets());
+    await refresh(targets(), true);
   }
 
   // Fell-all deadwood: one confirm, felled together, one Undo restores them all.
@@ -190,17 +190,17 @@ export function activate(context: vscode.ExtensionContext) {
     const pick = await vscode.window.showWarningMessage(
       `Fell all ${trees.length} deadwood?`, { modal: true, detail: trees.map((t) => t.name).join(", ") }, `Fell ${trees.length}`);
     if (!pick) return;
-    const tokens = await ops.fellMany(repo, trees);
+    const tokens = await ops.fellMany(repo, trees, trunkOpt());
     tokens.forEach((t) => broadcast({ type: "felled", path: t.path }));
     await updateStatus();
     const undo = await vscode.window.showInformationMessage(`🪓 Felled ${tokens.length} deadwood`, "Undo");
-    if (undo === "Undo") { await ops.unfellMany(repo, tokens); await refresh(targets()); }
+    if (undo === "Undo") { await ops.unfellMany(repo, tokens); await refresh(targets(), true); }
   }
 
   async function fellWorktree(m: any) {
     const repo = repoRoot();
     if (!repo) return;
-    const a = await ops.assess(repo, m.path);
+    const a = await ops.assess(repo, m.path, trunkOpt());
     const branch = m.branch && m.branch !== "(detached)" ? (m.branch as string) : null;
     if (!a.safe) {
       const risks: string[] = [];
@@ -221,7 +221,7 @@ export function activate(context: vscode.ExtensionContext) {
     await updateStatus();
     const undo = await vscode.window.showInformationMessage(`🪓 Felled ${m.name}`, "Undo");
     if (undo === "Undo") {
-      try { await ops.unfell(repo, token); broadcast({ type: "restored", path: m.path }); await refresh(targets()); }
+      try { await ops.unfell(repo, token); broadcast({ type: "restored", path: m.path }); await refresh(targets(), true); }
       catch (e: any) { vscode.window.showErrorMessage(`Undo failed: ${e.message} — the branch may still be at ${token.sha.slice(0, 9)}.`); }
     }
   }
@@ -296,7 +296,9 @@ export function activate(context: vscode.ExtensionContext) {
 
   // ---- ambient status tile ----
   const r0 = repoRoot();
-  if (r0) { const c = getCache(r0); if (c) paintStatus(c); } // instant tile from last-known cache
+  const warming = cfg().get<boolean>("warmOnStartup") ?? true;
+  if (r0 && getCache(r0)) paintStatus(getCache(r0)!); // instant from last-known cache
+  else if (!warming) updateStatus(); // no warm, no cache → read once so the tile isn't hidden forever
   const secs = cfg().get<number>("statusBarRefreshSeconds") ?? 20;
   if (secs > 0) { const h = setInterval(updateStatus, secs * 1000); context.subscriptions.push({ dispose: () => clearInterval(h) }); }
 }

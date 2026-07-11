@@ -13,7 +13,7 @@
 // disambiguated by the git noun it acts on. Deadwood = landed, clean, fellable.
 
 import { execFile } from "child_process";
-import { gatherFleet, Row } from "./git";
+import { gatherFleet, Row, trunkBranch } from "./git";
 import { fleetJson, whoHas, attachClaims, tendPlan } from "./core";
 import { readClaims, setClaim, clearClaim } from "./manifest";
 import * as ops from "./ops";
@@ -69,6 +69,7 @@ function pad(s: string, n: number): string {
 }
 
 async function looseCount(repo: string): Promise<number> {
+  const trunk = await trunkBranch(repo);
   const wt = await git(repo, ["worktree", "list", "--porcelain"]);
   const checkedOut = new Set(
     wt.split("\n").filter((l) => l.startsWith("branch "))
@@ -76,7 +77,7 @@ async function looseCount(repo: string): Promise<number> {
   );
   const all = (await git(repo, ["for-each-ref", "--format=%(refname:short)", "refs/heads"]))
     .split("\n").map((s) => s.trim()).filter(Boolean);
-  return all.filter((b) => b !== "master" && !checkedOut.has(b)).length;
+  return all.filter((b) => b !== trunk && !checkedOut.has(b)).length;
 }
 
 function repoName(repo: string): string {
@@ -109,7 +110,7 @@ async function cmdStatus(repo: string, json = false) {
     `${C.blue}${dirty} dirty${C.reset} · ${C.red}${ahead} ahead${C.reset} · ` +
     `${C.green}${landed} landed${C.reset}\n`
   );
-  for (const r of w) console.log(`  ${pad(r.name, 30)} ${pad(squares(r), 0)}  ${statusTag(r)}`);
+  for (const r of w) console.log(`  ${pad(r.name, 30)} ${squares(r)}  ${statusTag(r)}`);
   console.log(
     `\n  ${C.dim}legend:${C.reset} ${C.blue}■${C.reset} WIP  ` +
     `${C.red}■${C.reset} off master  ${C.green}■${C.reset} on master   ` +

@@ -45,3 +45,12 @@ test("salvageMany parks every tree's WIP onto one shared branch as history", asy
   assert.equal(g(e.dir, "rev-list", "--count", "salvage"), "3");
   cleanup(e);
 });
+
+test("fellMany respects a configured trunk (won't fell work ahead of it)", async () => {
+  const e = makeRepo("develop"); // trunk is develop; no master/main
+  const p = wt(e, "feat", "feat");
+  commit(p, "x.txt", "x\n", "ahead of develop");
+  const tokens = await ops.fellMany(e.dir, [{ path: p, branch: "feat", name: "feat" }], "develop");
+  assert.equal(tokens.length, 0, "not felled — it is 1 ahead of the configured trunk");
+  cleanup(e);
+});

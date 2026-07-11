@@ -2,11 +2,10 @@
 // disposable lens you raise, read, and drop. Renders from data the host posts
 // (cache-first, then live) and posts back peek/dive/fell/diff intents.
 
+import { randomBytes } from "crypto";
+
 function nonce(): string {
-  let s = "";
-  const c = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-  for (let i = 0; i < 32; i++) s += c[Math.floor(Math.random() * c.length)];
-  return s;
+  return randomBytes(24).toString("hex"); // CSPRNG, not Math.random
 }
 
 export function fleetHtml(compact = false): string {
@@ -92,7 +91,8 @@ const fileCache={};                // sha -> {files,overflow}
 const collapsed={needs:false,wip:false,dead:true,understory:true};
 const $=id=>document.getElementById(id);
 const left=$('left'),mid=$('mid'),right=$('right'),midpad=$('midpad'),rightpad=$('rightpad'),q=$('q'),summary=$('summary');
-const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML;};
+// escape <>& AND quotes — esc() output lands inside "double-quoted" attributes
+const esc=s=>{const d=document.createElement('div');d.textContent=s;return d.innerHTML.replace(/"/g,'&quot;').replace(/'/g,'&#39;');};
 
 // grouping + aging are stamped on each row by the host (see core.ts) — the
 // view carries no domain logic, it just reads r.group and r.amber.
@@ -185,7 +185,7 @@ function selectRow(r,id){
     h+='<div class="cmt" data-i="'+i+'"><span class="sq '+cls+'"></span><span class="csha">'+esc(c.short)+'</span><span class="csub">'+esc(c.subj)+'</span></div>';});
   if(r.overflow) h+='<div class="cmt"><span class="csub ovf">…+'+r.overflow+' older</span></div>';
   if(r.dirty){h+='<div class="hint" style="margin-top:12px;color:var(--blue)">WIP — click a file to diff</div>';
-    for(const line of r.wip){const p=line.slice(3); h+='<div class="file" data-wip="'+esc(p)+'">'+esc(line)+'</div>';}}
+    for(const line of r.wip){const raw=line.slice(3); const p = raw.includes(' -> ') ? raw.split(' -> ')[1] : raw; h+='<div class="file" data-wip="'+esc(p)+'">'+esc(line)+'</div>';}}
   midpad.innerHTML=h;
   midpad.querySelectorAll('.cmt[data-i]').forEach(el=>el.onclick=()=>selectCommit(r,+el.dataset.i));
   midpad.querySelectorAll('.file[data-wip]').forEach(el=>el.onclick=()=>vscode.postMessage({type:'diffWip',cwd:r.path,file:el.dataset.wip}));
@@ -230,7 +230,7 @@ document.onkeydown=e=>{
   if(e.key==='j'||e.key==='ArrowDown'){ e.preventDefault(); moveCursor(1); return; }
   if(e.key==='k'||e.key==='ArrowUp'){ e.preventDefault(); moveCursor(-1); return; }
   const cur=cursor>=0?flat[cursor]:null;
-  if(e.key==='Enter'&&cur){ e.preventDefault(); COMPACT?vscode.postMessage({type:'openFull'}):diveRow(cur.r); return; }
+  if(e.key==='Enter'&&cur){ e.preventDefault(); COMPACT?vscode.postMessage({type:'openFull',name:cur.r.name,path:cur.r.path}):diveRow(cur.r); return; }
   if(e.key===' '&&cur){ e.preventDefault(); selectRow(cur.r,cur.gid+':'+cur.r.name); return; }
   if(e.key==='f'&&cur&&cur.gid==='w'){ e.preventDefault(); fellRow(cur.r); return; }
   if(e.key==='Escape'){ if(right.classList.contains('open')){right.classList.remove('open');selCmt=-1;} else{mid.classList.remove('open');selRow=null;selRowObj=null;render();} }

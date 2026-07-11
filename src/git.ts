@@ -115,14 +115,17 @@ export async function gatherWorktrees(repo: string, opts: GatherOpts = {}): Prom
   const worktrees = await mapLimit(entries, conc, async (e) => {
     const [{ commits, overflow, age }, porcRaw, aheadRaw] = await Promise.all([
       commitsOf(repo, e.path, null, trunkShas, window, maxFiles),
-      git(e.path, ["status", "--porcelain"]),
+      // --untracked-files=all so a newly-created dir enumerates its files (else
+      // who_has / collision detection miss files inside a new directory)
+      git(e.path, ["status", "--porcelain", "--untracked-files=all"]),
       git(e.path, ["rev-list", "--count", `${trunk}..HEAD`]),
     ]);
     const porc = parsePorcelain(porcRaw);
     const ahead = parseCount(aheadRaw);
     const row: Row = {
       kind: "worktree", name: worktreeName(e.path), branch: e.branch, path: e.path,
-      commits, overflow, dirty: porc.dirty, trackedWip: porc.trackedWip, wip: porc.lines.slice(0, 200),
+      // keep ALL wip lines — who_has / tendPlan / --json query this; only the UI truncates
+      commits, overflow, dirty: porc.dirty, trackedWip: porc.trackedWip, wip: porc.lines,
       ahead, age, amber: isAmber({ dirty: porc.dirty, age }),
     };
     row.group = classify(row);

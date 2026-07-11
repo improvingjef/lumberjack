@@ -104,3 +104,12 @@ test("salvage appends to an existing preserve branch (history, not clobber)", as
   assert.equal(g(e.dir, "rev-parse", "salvage~1"), c1, "first is the parent — history preserved");
   cleanup(e);
 });
+
+test("assess fails CLOSED when a safety probe fails (e.g. trunk ref missing)", async () => {
+  const e = makeRepo("master");
+  const p = wt(e, "feat", "feat");
+  commit(p, "x.txt", "x\n", "real work");
+  const a = await ops.assess(e.dir, p, "nonexistent-trunk"); // rev-list against a bad ref throws
+  assert.equal(a.safe, false, "an unresolvable trunk must NOT read as safe-to-fell");
+  cleanup(e);
+});

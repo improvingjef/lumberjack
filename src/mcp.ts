@@ -25,6 +25,13 @@ const TOOLS = [
   { name: "salvage", description: "Park a worktree's WIP onto the shared salvage branch for review, without touching the worktree.", inputSchema: { type: "object", properties: { worktree_path: { type: "string" } }, required: ["worktree_path"] } },
 ];
 
+// Reject any worktree_path that isn't an actual worktree of this repo — an
+// agent must not be able to point salvage/claim at an external repo on disk.
+async function requireWorktree(repo: string, p: string): Promise<void> {
+  const f = await gatherFleet(repo, { window: 0, maxFiles: 0, includeBranches: false });
+  if (!f.worktrees.some((w) => w.path === p)) throw new Error(`worktree_path is not a worktree of this repo: ${p}`);
+}
+
 async function callTool(cwd: string, name: string, args: any): Promise<unknown> {
   const repo = await repoTop(cwd);
   if (name === "fleet_status") {
@@ -40,9 +47,9 @@ async function callTool(cwd: string, name: string, args: any): Promise<unknown> 
     const f = await gatherFleet(repo, { window: 1, maxFiles: 0, includeBranches: false });
     return tendPlan(f);
   }
-  if (name === "claim") { setClaim(await commonDir(repo), String(args.worktree_path), String(args.note)); return { ok: true }; }
+  if (name === "claim") { const p = String(args.worktree_path); await requireWorktree(repo, p); setClaim(await commonDir(repo), p, String(args.note)); return { ok: true }; }
   if (name === "land") { return ops.land(repo, String(args.branch)); }
-  if (name === "salvage") { const c = await ops.salvage(repo, String(args.worktree_path), "salvage", "salvage: preserve (lumberjack mcp)"); return { ok: true, commit: c }; }
+  if (name === "salvage") { const p = String(args.worktree_path); await requireWorktree(repo, p); const c = await ops.salvage(repo, p, "salvage", "salvage: preserve (lumberjack mcp)"); return { ok: true, commit: c }; }
   throw new Error(`unknown tool: ${name}`);
 }
 

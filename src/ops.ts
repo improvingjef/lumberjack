@@ -31,26 +31,34 @@ export interface Assessment {
   safe: boolean; // ahead === 0 && !trackedWip  → fell is fully reversible
 }
 
-/** Re-read a worktree's live state right before acting on it. */
+/**
+ * Re-read a worktree's live state right before acting on it. FAILS CLOSED: if
+ * any probe errors (an unresolvable trunk, a locked index, an unreadable
+ * worktree) the assessment is NOT safe — never fell on indeterminate state.
+ */
 export async function assess(repo: string, wtPath: string, trunk?: string): Promise<Assessment> {
   const t = trunk ?? (await trunkBranch(repo));
   let ahead = 0;
   let porc = "";
   let sha = "";
-  try { ahead = parseInt((await git(wtPath, ["rev-list", "--count", `${t}..HEAD`])).trim(), 10) || 0; } catch {}
-  try { porc = await git(wtPath, ["status", "--porcelain"]); } catch {}
-  try { sha = (await git(wtPath, ["rev-parse", "HEAD"])).trim(); } catch {}
-  const { trackedWip, safe } = assessSafety(ahead, porc.split("\n"));
-  return { ahead, trackedWip, sha, safe };
+  let ok = true;
+  try {
+    const r = (await git(wtPath, ["rev-list", "--count", `${t}..HEAD`])).trim();
+    if (/^\d+$/.test(r)) ahead = parseInt(r, 10); else ok = false;
+  } catch { ok = false; }
+  try { porc = await git(wtPath, ["status", "--porcelain"]); } catch { ok = false; }
+  try { sha = (await git(wtPath, ["rev-parse", "HEAD"])).trim(); if (!sha) ok = false; } catch { ok = false; }
+  const { trackedWip } = assessSafety(ahead, porc.split("\n"));
+  return { ahead, trackedWip, sha, safe: ok && ahead === 0 && !trackedWip };
 }
 
 export interface TreeRef { path: string; branch: string; name: string; }
 
 /** Fell every listed tree that is still safe; returns restore tokens for those felled. */
-export async function fellMany(repo: string, trees: TreeRef[]): Promise<RestoreToken[]> {
+export async function fellMany(repo: string, trees: TreeRef[], trunk?: string): Promise<RestoreToken[]> {
   const tokens: RestoreToken[] = [];
   for (const t of trees) {
-    const a = await assess(repo, t.path);
+    const a = await assess(repo, t.path, trunk);
     if (!a.safe) continue; // only fell what's still safe
     try { tokens.push(await fell(repo, t.path, t.branch && t.branch !== "(detached)" ? t.branch : null)); } catch {}
   }
@@ -130,15 +138,22 @@ export async function salvage(
     const env = { GIT_INDEX_FILE: tmpIndex };
     await git(wtPath, ["add", "-A"], env); // stage everything into the throwaway index
     const tree = (await git(wtPath, ["write-tree"], env)).trim();
-    // rev-parse --verify exits non-zero when the branch doesn't exist yet; that
-    // rejects here, so treat any failure as "no preserve branch" and root the
-    // first snapshot at the worktree's own HEAD.
-    let parent = "";
-    try { parent = (await git(repo, ["rev-parse", "--verify", "--quiet", preserveBranch])).trim(); } catch {}
-    if (!parent) parent = (await git(wtPath, ["rev-parse", "HEAD"])).trim();
-    const commit = (await git(wtPath, ["commit-tree", tree, "-p", parent, "-m", message])).trim();
-    await git(repo, ["update-ref", `refs/heads/${preserveBranch}`, commit]);
-    return commit;
+    const ref = `refs/heads/${preserveBranch}`;
+    // compare-and-swap loop: read the current tip, build a commit on it, then
+    // update-ref with the expected old value. If a concurrent salvage advanced
+    // the branch between read and write, the CAS fails and we retry — so no
+    // preserved snapshot is ever clobbered.
+    for (let attempt = 0; attempt < 6; attempt++) {
+      let old = "";
+      try { old = (await git(repo, ["rev-parse", "--verify", "--quiet", ref])).trim(); } catch {}
+      const parent = old || (await git(wtPath, ["rev-parse", "HEAD"])).trim(); // first snapshot roots at HEAD
+      const commit = (await git(wtPath, ["commit-tree", tree, "-p", parent, "-m", message])).trim();
+      try {
+        await git(repo, ["update-ref", ref, commit, old]); // old="" ⇒ ref must not exist
+        return commit;
+      } catch { /* another writer moved it — re-read and retry */ }
+    }
+    throw new Error(`salvage: could not update ${preserveBranch} after retries`);
   } finally {
     try { unlinkSync(tmpIndex); } catch {}
   }
@@ -177,9 +192,13 @@ export async function integrateMany(
   return { landed, conflicts, skipped };
 }
 
-/** Diffstat between two refs (worktree branches) — for judging rival solutions. */
+/**
+ * Diffstat between two branch TIPS — for judging rival solutions. Uses a
+ * two-tree diff (`git diff a b`), NOT a `a...b` merge-base range, so changes
+ * unique to EITHER side are shown (three-dot would omit a's own changes).
+ */
 export async function compareStat(repo: string, a: string, b: string): Promise<{ files: number; raw: string }> {
-  const raw = (await git(repo, ["diff", "--stat", `${a}...${b}`])).trim();
-  const names = (await git(repo, ["diff", "--name-only", `${a}...${b}`])).split("\n").filter(Boolean);
+  const raw = (await git(repo, ["diff", "--stat", a, b])).trim();
+  const names = (await git(repo, ["diff", "--name-only", a, b])).split("\n").filter(Boolean);
   return { files: names.length, raw };
 }
