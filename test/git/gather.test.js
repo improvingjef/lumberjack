@@ -86,3 +86,8 @@ test("gatherFleet: works on a main-trunk repo (not just master)", async () => {
   assert.ok(byName(fleet, "A").commits.every((c) => c.onMaster), "colored against main");
   cleanup(e);
 });
+
+test("gatherWorktrees throws on an unreadable path (not a silent empty fleet)", async () => {
+  await assert.rejects(() => require("../../out/git.js").gatherWorktrees("/nope/not-a-repo-" + Date.now(), {}),
+    "an unreadable repo must error, not report 'the stand is clear'");
+});

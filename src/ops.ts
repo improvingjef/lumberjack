@@ -65,9 +65,14 @@ export async function fellMany(repo: string, trees: TreeRef[], trunk?: string): 
   return tokens;
 }
 
-/** Restore every token from a fellMany (undo-all). */
-export async function unfellMany(repo: string, tokens: RestoreToken[]): Promise<void> {
-  for (const t of tokens) { try { await unfell(repo, t); } catch {} }
+/** Restore every token from a fellMany; report which failed rather than dropping them. */
+export async function unfellMany(repo: string, tokens: RestoreToken[]): Promise<{ restored: string[]; failed: { ref: string; error: string }[] }> {
+  const restored: string[] = [], failed: { ref: string; error: string }[] = [];
+  for (const t of tokens) {
+    try { await unfell(repo, t); restored.push(t.branch ?? t.path); }
+    catch (e: any) { failed.push({ ref: t.branch ?? t.path, error: e?.message ?? String(e) }); }
+  }
+  return { restored, failed };
 }
 
 /**
@@ -75,15 +80,22 @@ export async function unfellMany(repo: string, tokens: RestoreToken[]): Promise<
  * out in the main worktree (so the working tree stays consistent). Refuses
  * anything that isn't a clean fast-forward — never a merge commit, never force.
  */
-export async function land(repo: string, branch: string, trunk?: string): Promise<{ ok: boolean; message: string }> {
+export async function land(repo: string, branch: string, trunk?: string): Promise<{ ok: boolean; message: string; reason?: string }> {
   const t = trunk ?? (await trunkBranch(repo));
   const head = (await git(repo, ["symbolic-ref", "--quiet", "--short", "HEAD"])).trim();
-  if (head !== t) return { ok: false, message: `trunk '${t}' isn't checked out in the main worktree (it's on '${head}')` };
+  if (head !== t) return { ok: false, reason: "trunk-not-checked-out", message: `trunk '${t}' isn't checked out in the main worktree (it's on '${head || "a detached HEAD"}')` };
+  if (!(await refExists(repo, branch))) return { ok: false, reason: "no-such-branch", message: `no branch '${branch}'` };
+  let ffable = false;
+  try { await git(repo, ["merge-base", "--is-ancestor", t, branch]); ffable = true; } catch {}
+  if (!ffable) return { ok: false, reason: "diverged", message: `${branch} isn't a fast-forward of ${t} (diverged)` };
   try {
     await git(repo, ["merge", "--ff-only", branch]);
     return { ok: true, message: `fast-forwarded ${t} → ${branch}` };
   } catch {
-    return { ok: false, message: `${branch} isn't a fast-forward of ${t} (diverged)` };
+    const dirty = (await git(repo, ["status", "--porcelain"])).trim() !== "";
+    return dirty
+      ? { ok: false, reason: "dirty-tree", message: `the main worktree has uncommitted changes blocking the fast-forward` }
+      : { ok: false, reason: "ff-failed", message: `fast-forward of ${t} → ${branch} failed` };
   }
 }
 
@@ -115,10 +127,22 @@ export async function fell(repo: string, wtPath: string, branch: string | null):
   return { path: wtPath, branch, sha };
 }
 
-/** Undo a fell: recreate the worktree (and branch) at the captured sha. */
+async function refExists(repo: string, ref: string): Promise<boolean> {
+  try { return !!(await git(repo, ["rev-parse", "--verify", "--quiet", ref])).trim(); } catch { return false; }
+}
+
+/**
+ * Undo a fell: recreate the worktree at the captured sha. If the branch still
+ * exists (fell's `branch -D` was refused), reuse it rather than failing on
+ * `add -b`. Throws loudly if the path is occupied — the caller surfaces that.
+ */
 export async function unfell(repo: string, token: RestoreToken): Promise<void> {
-  if (token.branch) await git(repo, ["worktree", "add", "-b", token.branch, token.path, token.sha]);
-  else await git(repo, ["worktree", "add", "--detach", token.path, token.sha]);
+  if (token.branch) {
+    if (await refExists(repo, token.branch)) await git(repo, ["worktree", "add", token.path, token.branch]);
+    else await git(repo, ["worktree", "add", "-b", token.branch, token.path, token.sha]);
+  } else {
+    await git(repo, ["worktree", "add", "--detach", token.path, token.sha]);
+  }
 }
 
 /**

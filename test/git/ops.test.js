@@ -113,3 +113,26 @@ test("assess fails CLOSED when a safety probe fails (e.g. trunk ref missing)", a
   assert.equal(a.safe, false, "an unresolvable trunk must NOT read as safe-to-fell");
   cleanup(e);
 });
+
+test("unfell reuses an existing branch when fell couldn't delete it (loud, not lost)", async () => {
+  const e = makeRepo("master");
+  const p = wt(e, "feat", "feat");
+  const sha = commit(p, "k.txt", "k\n", "work");
+  const token = await ops.fell(e.dir, p, "feat");
+  g(e.dir, "branch", "feat", sha); // something recreated the branch after fell
+  await ops.unfell(e.dir, token); // must NOT throw; reuse the existing branch
+  assert.ok(g(e.dir, "worktree", "list", "--porcelain").includes("worktree " + p), "worktree restored");
+  cleanup(e);
+});
+
+test("unfellMany reports failures instead of silently dropping them", async () => {
+  const e = makeRepo("master");
+  const p = wt(e, "feat", "feat");
+  const token = await ops.fell(e.dir, p, "feat");
+  require("fs").mkdirSync(p); // occupy the path with a non-empty dir so `worktree add` refuses
+  require("fs").writeFileSync(require("path").join(p, "blocker"), "x");
+  const res = await ops.unfellMany(e.dir, [token]);
+  assert.equal(res.restored.length, 0);
+  assert.equal(res.failed.length, 1, "the collision is surfaced, not swallowed");
+  cleanup(e);
+});

@@ -36,3 +36,25 @@ test("landMany lands the ff-able, skips the rest", async () => {
   assert.ok(res.skipped.includes("b"));
   cleanup(e);
 });
+
+test("land reports dirty-main distinctly from diverged", async () => {
+  const e = makeRepo("master");
+  const p = wt(e, "feat", "feat");
+  commit(p, "shared.txt", "feat\n", "feat adds shared.txt"); // feat is ff-able of master
+  const { writeFileSync } = require("fs");
+  writeFileSync(require("path").join(e.dir, "shared.txt"), "would-be-overwritten\n"); // main dirties the same path
+  const res = await ops.land(e.dir, "feat");
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "dirty-tree", "ff-able but blocked by a dirty main tree — NOT 'diverged'");
+  cleanup(e);
+});
+
+test("land marks a genuinely diverged branch as diverged", async () => {
+  const e = makeRepo("master");
+  const p = wt(e, "feat", "feat");
+  commit(p, "x.txt", "x\n", "feat");
+  commit(e.dir, "y.txt", "y\n", "trunk moves"); // master diverges
+  const res = await ops.land(e.dir, "feat");
+  assert.equal(res.reason, "diverged");
+  cleanup(e);
+});

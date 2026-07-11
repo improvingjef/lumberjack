@@ -110,8 +110,11 @@ async function trunkAnd(repo: string, opts: GatherOpts): Promise<{ trunk: string
 
 export async function gatherWorktrees(repo: string, opts: GatherOpts = {}): Promise<{ worktrees: Row[]; trunk: string }> {
   const window = opts.window ?? 14, maxFiles = opts.maxFiles ?? 0, conc = opts.concurrency ?? 16;
-  const { trunk, trunkShas } = await trunkAnd(repo, opts);
   const entries = parseWorktreeList(await git(repo, ["worktree", "list", "--porcelain"]));
+  // a real repo always lists at least its main worktree; zero means the git
+  // call failed (bad repoPath, git unavailable) — surface it, don't report empty
+  if (!entries.length) throw new Error(`lumberjack: could not read worktrees at ${repo} (is it a git repository?)`);
+  const { trunk, trunkShas } = await trunkAnd(repo, opts);
   const worktrees = await mapLimit(entries, conc, async (e) => {
     const [{ commits, overflow, age }, porcRaw, aheadRaw] = await Promise.all([
       commitsOf(repo, e.path, null, trunkShas, window, maxFiles),

@@ -72,7 +72,9 @@ export function activate(context: vscode.ExtensionContext) {
       const fleet = { worktrees, branches };
       await setCache(repo, fleet);
       paintStatus(fleet);
-      broadcast({ type: "data", repo, fleet }); // freshen any already-open view
+      // NB: do NOT broadcast here — an open view refreshes on its own, and a
+      // background 'data' can land after that refresh's split worktrees/branches
+      // posts and revert them (race). The warm cache benefits the next open.
     } catch { /* leave the last good cache */ }
   }
 
@@ -99,17 +101,22 @@ export function activate(context: vscode.ExtensionContext) {
     // warm cache + not forced → the instant paint IS current; skip the redundant gather
     if (!force && cached && cacheAge(repo) < freshMs()) { pendingSelect = undefined; return; }
 
-    const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
-    attachClaims(worktrees, readClaims(await commonDir(repo)));
-    views.forEach((w) => w.postMessage({ type: "worktrees", worktrees, select }));
-    pendingSelect = undefined;
-    paintStatus({ worktrees, branches: cached?.branches ?? [] });
+    try {
+      const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
+      attachClaims(worktrees, readClaims(await commonDir(repo)));
+      views.forEach((w) => w.postMessage({ type: "worktrees", worktrees, select }));
+      pendingSelect = undefined;
+      paintStatus({ worktrees, branches: cached?.branches ?? [] });
 
-    const branches = await gatherBranches(repo, { window: commitWindow(), maxFiles: 0, trunk });
-    views.forEach((w) => w.postMessage({ type: "branches", branches }));
+      const branches = await gatherBranches(repo, { window: commitWindow(), maxFiles: 0, trunk });
+      views.forEach((w) => w.postMessage({ type: "branches", branches }));
 
-    await setCache(repo, { worktrees, branches });
-    paintStatus({ worktrees, branches });
+      await setCache(repo, { worktrees, branches });
+      paintStatus({ worktrees, branches });
+    } catch (e: any) {
+      pendingSelect = undefined;
+      views.forEach((w) => w.postMessage({ type: "error", message: `Couldn't read the fleet: ${e?.message ?? e}` }));
+    }
   }
 
   async function updateStatus() {
@@ -174,10 +181,10 @@ export function activate(context: vscode.ExtensionContext) {
   async function landGroup(m: any) {
     const repo = repoRoot();
     if (!repo) return;
-    const branches = ((m.trees ?? []) as ops.TreeRef[]).map((t) => t.branch).filter(Boolean);
+    const branches = ((m.trees ?? []) as ops.TreeRef[]).map((t) => t.branch).filter((b) => b && b !== "(detached)");
     if (!branches.length) return;
     const { landed, skipped } = await ops.landMany(repo, branches, trunkOpt());
-    vscode.window.showInformationMessage(`Landed ${landed.length}${skipped.length ? `, skipped ${skipped.length} (diverged)` : ""}`);
+    vscode.window.showInformationMessage(`Landed ${landed.length}${skipped.length ? `, skipped ${skipped.length} (not fast-forwardable)` : ""}`);
     await refresh(targets(), true);
   }
 
@@ -194,7 +201,11 @@ export function activate(context: vscode.ExtensionContext) {
     tokens.forEach((t) => broadcast({ type: "felled", path: t.path }));
     await updateStatus();
     const undo = await vscode.window.showInformationMessage(`🪓 Felled ${tokens.length} deadwood`, "Undo");
-    if (undo === "Undo") { await ops.unfellMany(repo, tokens); await refresh(targets(), true); }
+    if (undo === "Undo") {
+      const r = await ops.unfellMany(repo, tokens);
+      if (r.failed.length) vscode.window.showWarningMessage(`Undo: restored ${r.restored.length}, ${r.failed.length} couldn't be restored (${r.failed.map((f) => f.ref).join(", ")})`);
+      await refresh(targets(), true);
+    }
   }
 
   async function fellWorktree(m: any) {
