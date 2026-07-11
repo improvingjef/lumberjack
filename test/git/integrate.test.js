@@ -43,3 +43,17 @@ test("integrateMany reports landed vs conflicts", async () => {
   assert.ok(res.conflicts.includes("b"));
   cleanup(e);
 });
+
+test("integrateMany: landing one branch can flip another to conflict (the shuffle)", async () => {
+  const e = makeRepo("master");
+  const a = wt(e, "a", "a"); commit(a, "shared.txt", "a-version\n", "a edits shared");
+  const b = wt(e, "b", "b"); commit(b, "shared.txt", "b-version\n", "b edits shared");
+  commit(e.dir, "z.txt", "z\n", "trunk moves"); // a and b both diverge
+  const res = await ops.integrateMany(e.dir, [
+    { path: a, branch: "a", name: "a" },
+    { path: b, branch: "b", name: "b" },
+  ]);
+  assert.ok(res.landed.includes("a"), "a rebases clean and lands");
+  assert.ok(res.conflicts.includes("b"), "b flips to conflict once a's shared.txt is on master");
+  cleanup(e);
+});

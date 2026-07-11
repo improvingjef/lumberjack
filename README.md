@@ -109,11 +109,17 @@ npm run test:integration   # extension host in a real VS Code (@vscode/test-elec
     host posts: navigation (a click lands on *that* worktree, collapsed
     sections reveal), the fell/salvage actions, and a fresh CSP nonce per render.
 - **Git integration (`test/git/*.test.js`)** — against real repos:
-  - `gather` — trunk detection (master/main), coloring, sort, loose branches.
-  - `ops` — the load-bearing safety: `assess`, the **fell → unfell round-trip
-    restores tree + branch + content**, detached worktrees, `salvage`
-    (tracked + untracked WIP onto a preserve branch, worktree untouched, history
-    appended), and the batch `fellMany` (skips unsafe) / `salvageMany`.
+  - `gather` — trunk detection (master/main), coloring, sort, loose branches,
+    and that an unreadable repo *errors* rather than reporting an empty fleet.
+  - `ops` — the load-bearing safety: `assess` (fails **closed** on any probe
+    failure), the **fell → unfell round-trip** (incl. reusing a surviving
+    branch, and `unfellMany` reporting failures), `land` (distinct reasons:
+    diverged / dirty-tree / trunk-not-checked-out), `salvage` (compare-and-swap,
+    history appended), the batch `fellMany` (skips unsafe, honors a configured
+    trunk), and `integrate` (rebase-and-land, incl. the cascade flip).
+  - `mcp` — the MCP server spoken to over **real stdio JSON-RPC**: handshake,
+    `tools/list`, `tools/call`, unknown-method + notification handling, and the
+    `worktree_path` fleet-validation that blocks cross-repo writes.
 - **Host smoke (`test/integration/`)** — launches a real VS Code, activates,
   asserts commands register and run.
 

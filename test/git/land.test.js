@@ -58,3 +58,14 @@ test("land marks a genuinely diverged branch as diverged", async () => {
   assert.equal(res.reason, "diverged");
   cleanup(e);
 });
+
+test("land refuses (with reason) when the trunk isn't checked out in main", async () => {
+  const e = makeRepo("master");
+  const p = wt(e, "feat", "feat");
+  commit(p, "x.txt", "x\n", "x");
+  g(e.dir, "checkout", "-q", "-b", "sidebar"); // main is now on 'sidebar', not master
+  const res = await ops.land(e.dir, "feat");
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "trunk-not-checked-out");
+  cleanup(e);
+});

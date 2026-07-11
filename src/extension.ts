@@ -3,7 +3,7 @@ import * as path from "path";
 import { execFile } from "child_process";
 import { gatherWorktrees, gatherBranches, commitFiles, showAtRef, Fleet } from "./git";
 import { fleetHtml } from "./webview";
-import { attachClaims } from "./core";
+import { attachClaims, shouldReuseCache } from "./core";
 import { readClaims } from "./manifest";
 import * as ops from "./ops";
 
@@ -99,7 +99,7 @@ export function activate(context: vscode.ExtensionContext) {
     else views.forEach((w) => w.postMessage({ type: "loading" }));
 
     // warm cache + not forced → the instant paint IS current; skip the redundant gather
-    if (!force && cached && cacheAge(repo) < freshMs()) { pendingSelect = undefined; return; }
+    if (shouldReuseCache(force, !!cached, cacheAge(repo), freshMs())) { pendingSelect = undefined; return; }
 
     try {
       const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });

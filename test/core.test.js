@@ -141,3 +141,10 @@ test("tendPlan: composes the fleet into a proposed sweep", () => {
   assert.ok(col && col.worktrees.sort().join(",") === "wip1,wip2", "shared.ts is a collision");
   assert.ok(!plan.collisions.find((c) => c.file === "own.ts"), "own.ts touched by one → not a collision");
 });
+
+test("shouldReuseCache: reuse only a fresh cache, and NEVER when forced", () => {
+  assert.equal(core.shouldReuseCache(false, true, 5000, 15000), true, "fresh + unforced → reuse");
+  assert.equal(core.shouldReuseCache(false, true, 20000, 15000), false, "stale → re-gather");
+  assert.equal(core.shouldReuseCache(true, true, 5000, 15000), false, "forced (post-mutation / ↻) → never reuse");
+  assert.equal(core.shouldReuseCache(false, false, 0, 15000), false, "no cache → gather");
+});

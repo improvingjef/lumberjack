@@ -115,6 +115,16 @@ export function summarize(worktrees: WorktreeFacts[], branchCount: number): Summ
   return { total: worktrees.length, needs, wip, dead, understory: branchCount, aging };
 }
 
+/**
+ * Whether a webview open can paint the warm cache and SKIP the live gather.
+ * True only for an unforced open of a fresh cache — a forced refresh (the ↻
+ * button, or any post-mutation refresh) must always re-gather so the view
+ * never shows pre-mutation state.
+ */
+export function shouldReuseCache(force: boolean, hasCache: boolean, ageMs: number, freshMs: number): boolean {
+  return !force && hasCache && ageMs < freshMs;
+}
+
 /** The file path from a `git status --porcelain` line (unwrapping renames). */
 export function wipPath(line: string): string {
   const p = line.slice(3);
