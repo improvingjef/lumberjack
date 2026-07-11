@@ -144,6 +144,39 @@ export async function salvage(
   }
 }
 
+/**
+ * Integrate a diverged branch: rebase it onto the trunk (in its own worktree),
+ * then land it. On any rebase conflict it aborts cleanly and reports — never
+ * leaves the worktree mid-rebase, never force-lands. Referencing the trunk by
+ * name means each call rebases onto the *current* trunk, so a sequence cascades.
+ */
+export async function integrateOne(
+  repo: string, wtPath: string, branch: string, trunk?: string
+): Promise<{ status: "landed" | "conflict" | "skipped"; message: string }> {
+  const t = trunk ?? (await trunkBranch(repo));
+  try {
+    await git(wtPath, ["rebase", t]);
+  } catch {
+    await git(wtPath, ["rebase", "--abort"]).catch(() => {});
+    return { status: "conflict", message: `${branch} conflicts rebasing onto ${t}` };
+  }
+  const res = await land(repo, branch, t);
+  return res.ok ? { status: "landed", message: res.message } : { status: "skipped", message: res.message };
+}
+
+/** Integrate each tree in turn (cascading onto the growing trunk). */
+export async function integrateMany(
+  repo: string, trees: TreeRef[], trunk?: string
+): Promise<{ landed: string[]; conflicts: string[]; skipped: string[] }> {
+  const t = trunk ?? (await trunkBranch(repo));
+  const landed: string[] = [], conflicts: string[] = [], skipped: string[] = [];
+  for (const tr of trees) {
+    const r = await integrateOne(repo, tr.path, tr.branch, t);
+    (r.status === "landed" ? landed : r.status === "conflict" ? conflicts : skipped).push(tr.branch);
+  }
+  return { landed, conflicts, skipped };
+}
+
 /** Diffstat between two refs (worktree branches) — for judging rival solutions. */
 export async function compareStat(repo: string, a: string, b: string): Promise<{ files: number; raw: string }> {
   const raw = (await git(repo, ["diff", "--stat", `${a}...${b}`])).trim();

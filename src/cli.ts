@@ -138,6 +138,26 @@ async function cmdTend(repo: string, json: boolean, go: boolean) {
   } else { console.log(""); }
 }
 
+async function cmdIntegrate(repo: string, go: boolean) {
+  const fleet = await gatherFleet(repo, { window: 1, maxFiles: 0, includeBranches: false });
+  const trees = fleet.worktrees
+    .filter((w) => w.group === "needs" && w.branch && w.branch !== "(detached)")
+    .map((w) => ({ path: w.path, branch: w.branch, name: w.name }));
+  if (!trees.length) { console.log("\n  nothing to integrate.\n"); return; }
+  if (!go) {
+    console.log(`\n  ${C.bold}${trees.length}${C.reset} branch(es) to integrate (rebase onto trunk → land):`);
+    for (const t of trees.slice(0, 50)) console.log(`    ${t.name}`);
+    console.log(`\n  ${C.dim}lj integrate --go  rebases the clean ones and lands them; conflicts are skipped & flagged.${C.reset}\n`);
+    return;
+  }
+  console.log(`\n  integrating ${trees.length}…\n`);
+  const res = await ops.integrateMany(repo, trees);
+  console.log(`  ${C.green}landed ${res.landed.length}${C.reset} · ${C.red}conflicts ${res.conflicts.length}${C.reset} · skipped ${res.skipped.length}`);
+  if (res.landed.length) console.log(`\n  ${C.green}landed:${C.reset} ${res.landed.join(", ")}`);
+  if (res.conflicts.length) console.log(`\n  ${C.red}need manual rebase:${C.reset}\n    ${res.conflicts.join("\n    ")}`);
+  console.log("");
+}
+
 async function cmdLand(repo: string, branch: string | undefined) {
   if (!branch) { console.error("lj land <branch>"); process.exit(1); }
   const res = await ops.land(repo, branch);
@@ -238,6 +258,7 @@ ${C.bold}🪓 lj${C.reset} — tend your git worktree fleet
   ${C.bold}lj fell --go${C.reset}        fell them (remove worktree + delete merged branch)
   ${C.bold}lj fell --brush${C.reset}     also fell trees tangled only in untracked brush
   ${C.bold}lj land <branch>${C.reset}    fast-forward the trunk to a ready branch
+  ${C.bold}lj integrate [--go]${C.reset} rebase ready branches onto trunk and land them (conflicts flagged)
   ${C.bold}lj compare <a> <b>${C.reset}  diffstat between two branches/worktrees
   ${C.bold}lj tend [--go]${C.reset}       propose a sweep (fell · land · salvage · aging · collisions)
   ${C.bold}lj mcp${C.reset}              run as an MCP server (stdio) — fleet tools for an IDE agent
@@ -271,6 +292,7 @@ async function main() {
   if (cmd === "claim") return cmdClaim(cwd, positional[1], flags.has("--clear"));
   if (cmd === "claims") return cmdClaims(repo, json);
   if (cmd === "land") return cmdLand(repo, positional[1]);
+  if (cmd === "integrate") return cmdIntegrate(repo, flags.has("--go"));
   if (cmd === "compare") return cmdCompare(repo, positional[1], positional[2]);
   if (cmd === "tend") return cmdTend(repo, json, flags.has("--go"));
   if (cmd === "mcp") { const { runMcp } = await import("./mcp"); runMcp(cwd, "0.1.0"); return; }
