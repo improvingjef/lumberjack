@@ -10,3 +10,5 @@ tsconfig.json
 .gitignore
 .gitattributes
 *.vsix
+PLAN.md
+media/lj.svg
