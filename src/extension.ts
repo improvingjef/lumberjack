@@ -51,6 +51,30 @@ export function activate(context: vscode.ExtensionContext) {
   const targets = () => [panel?.webview, sidebar?.webview].filter(Boolean) as vscode.Webview[];
   const broadcast = (msg: any) => targets().forEach((w) => w.postMessage(msg));
   const cacheKey = (repo: string) => `fleet:${repo}`;
+  const atKey = (repo: string) => `fleetAt:${repo}`;
+  const getCache = (repo: string) => context.globalState.get<Fleet>(cacheKey(repo));
+  const cacheAge = (repo: string) => Date.now() - (context.globalState.get<number>(atKey(repo)) ?? 0);
+  const setCache = async (repo: string, fleet: Fleet) => {
+    await context.globalState.update(cacheKey(repo), fleet);
+    await context.globalState.update(atKey(repo), Date.now());
+  };
+  const freshMs = () => (cfg().get<number>("cacheFreshnessSeconds") ?? 15) * 1000;
+
+  // Interrogate the whole fleet in the background and warm the cache — run at
+  // startup so the first panel open is instant and current, not a cold 5s gather.
+  async function warmCache() {
+    const repo = repoRoot();
+    if (!repo) return;
+    try {
+      const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
+      attachClaims(worktrees, readClaims(await commonDir(repo)));
+      const branches = await gatherBranches(repo, { window: commitWindow(), maxFiles: 0, trunk });
+      const fleet = { worktrees, branches };
+      await setCache(repo, fleet);
+      paintStatus(fleet);
+      broadcast({ type: "data", repo, fleet }); // freshen any already-open view
+    } catch { /* leave the last good cache */ }
+  }
 
   function paintStatus(fleet: Fleet) {
     const w = fleet.worktrees;
@@ -62,15 +86,18 @@ export function activate(context: vscode.ExtensionContext) {
   }
 
   // Two-phase, cache-first gather for a set of webviews.
-  async function refresh(views: vscode.Webview[]) {
+  async function refresh(views: vscode.Webview[], force = false) {
     if (!views.length) return;
     const repo = repoRoot();
     if (!repo) { views.forEach((w) => w.postMessage({ type: "error", message: "No repo. Open a folder or set lumberjack.repoPath." })); return; }
 
     const select = pendingSelect; // focus this worktree the moment there's data — even from cache
-    const cached = context.globalState.get<Fleet>(cacheKey(repo));
+    const cached = getCache(repo);
     if (cached) views.forEach((w) => w.postMessage({ type: "data", repo, fleet: cached, cached: true, select }));
     else views.forEach((w) => w.postMessage({ type: "loading" }));
+
+    // warm cache + not forced → the instant paint IS current; skip the redundant gather
+    if (!force && cached && cacheAge(repo) < freshMs()) { pendingSelect = undefined; return; }
 
     const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
     attachClaims(worktrees, readClaims(await commonDir(repo)));
@@ -81,9 +108,8 @@ export function activate(context: vscode.ExtensionContext) {
     const branches = await gatherBranches(repo, { window: commitWindow(), maxFiles: 0, trunk });
     views.forEach((w) => w.postMessage({ type: "branches", branches }));
 
-    const fleet = { worktrees, branches };
-    await context.globalState.update(cacheKey(repo), fleet);
-    paintStatus(fleet);
+    await setCache(repo, { worktrees, branches });
+    paintStatus({ worktrees, branches });
   }
 
   async function updateStatus() {
@@ -203,7 +229,8 @@ export function activate(context: vscode.ExtensionContext) {
   function handler(view: vscode.Webview, isSidebar: boolean) {
     return async (msg: any) => {
       const repo = repoRoot();
-      if (msg.type === "ready" || msg.type === "refresh") return refresh([view]);
+      if (msg.type === "ready") return refresh([view]); // uses the warm cache if fresh
+      if (msg.type === "refresh") return refresh([view], true); // user hit ↻ → force live
       if (!repo) return;
       if (msg.type === "openFull") {
         const existed = !!panel;
@@ -247,7 +274,10 @@ export function activate(context: vscode.ExtensionContext) {
     panel.onDidDispose(() => (panel = undefined), undefined, context.subscriptions);
   }));
 
-  context.subscriptions.push(vscode.commands.registerCommand("lumberjack.refresh", () => refresh(targets())));
+  context.subscriptions.push(vscode.commands.registerCommand("lumberjack.refresh", () => refresh(targets(), true)));
+
+  // Warm the fleet in the background at startup → first open is instant + current.
+  if (cfg().get<boolean>("warmOnStartup") ?? true) warmCache();
 
   // Compare two worktrees — judge rival solutions to the same problem.
   context.subscriptions.push(vscode.commands.registerCommand("lumberjack.compare", async () => {
@@ -265,7 +295,8 @@ export function activate(context: vscode.ExtensionContext) {
   }));
 
   // ---- ambient status tile ----
-  updateStatus();
+  const r0 = repoRoot();
+  if (r0) { const c = getCache(r0); if (c) paintStatus(c); } // instant tile from last-known cache
   const secs = cfg().get<number>("statusBarRefreshSeconds") ?? 20;
   if (secs > 0) { const h = setInterval(updateStatus, secs * 1000); context.subscriptions.push({ dispose: () => clearInterval(h) }); }
 }
