@@ -105,6 +105,48 @@ test("salvage appends to an existing preserve branch (history, not clobber)", as
   cleanup(e);
 });
 
+test("salvage MERGES — a second worktree's WIP joins the first's on the tip, not over it", async () => {
+  const e = makeRepo("master");
+  const a = wt(e, "A", "A"); write(a, "from-a.txt", "alpha\n");
+  const b = wt(e, "B", "B"); write(b, "from-b.txt", "beta\n");
+  await ops.salvage(e.dir, a, "salvage", "preserve A");
+  await ops.salvage(e.dir, b, "salvage", "preserve B");
+  assert.equal(g(e.dir, "show", "salvage:from-a.txt"), "alpha", "A's WIP survives B's salvage");
+  assert.equal(g(e.dir, "show", "salvage:from-b.txt"), "beta", "B's WIP joined it");
+  cleanup(e);
+});
+
+test("a genuine collision is committed WITH conflict markers and flagged in the message", async () => {
+  const e = makeRepo("master");
+  const a = wt(e, "A", "A"); write(a, "README.md", "from-a\n");
+  const b = wt(e, "B", "B"); write(b, "README.md", "from-b\n");
+  await ops.salvage(e.dir, a, "salvage", "preserve A");
+  await ops.salvage(e.dir, b, "salvage", "preserve B");
+  const merged = g(e.dir, "show", "salvage:README.md");
+  assert.match(merged, /^<{7}/m, "conflict markers embedded — nothing lost");
+  assert.match(merged, /from-a/, "A's side present");
+  assert.match(merged, /from-b/, "B's side present");
+  assert.match(g(e.dir, "log", "-1", "--format=%B", "salvage"), /conflict markers: README\.md/, "the commit says so");
+  cleanup(e);
+});
+
+test("salvagePreview is a dry run — reports the collision, moves nothing", async () => {
+  const e = makeRepo("master");
+  const a = wt(e, "A", "A"); write(a, "README.md", "from-a\n");
+  const b = wt(e, "B", "B"); write(b, "README.md", "from-b\n"); write(b, "other.txt", "o\n");
+  const first = await ops.salvagePreview(e.dir, a, "salvage");
+  assert.equal(first.clean, true, "no preserve branch yet → nothing to collide with");
+  await ops.salvage(e.dir, a, "salvage", "preserve A");
+  const tip = g(e.dir, "rev-parse", "salvage");
+  const pv = await ops.salvagePreview(e.dir, b, "salvage");
+  assert.deepEqual(pv.files.sort(), ["README.md", "other.txt"], "every WIP path listed");
+  assert.deepEqual(pv.conflicts, ["README.md"], "only the collision flagged");
+  assert.equal(pv.clean, false);
+  assert.equal(g(e.dir, "rev-parse", "salvage"), tip, "the preview moved nothing");
+  assert.ok(g(b, "status", "--porcelain").includes("README.md"), "worktree untouched");
+  cleanup(e);
+});
+
 test("assess fails CLOSED when a safety probe fails (e.g. trunk ref missing)", async () => {
   const e = makeRepo("master");
   const p = wt(e, "feat", "feat");

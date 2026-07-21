@@ -22,7 +22,7 @@ const TOOLS = [
   { name: "tend", description: "A proposed caretaker sweep: deadwood to fell, branches ready to land, WIP to salvage, aging gems, and file collisions across worktrees.", inputSchema: { type: "object", properties: {} } },
   { name: "claim", description: "Claim a worktree on the shared board so other agents see it's taken.", inputSchema: { type: "object", properties: { worktree_path: { type: "string" }, note: { type: "string" } }, required: ["worktree_path", "note"] } },
   { name: "land", description: "Fast-forward the trunk to a ready (clean-ahead) branch. Refuses anything that isn't a clean ff.", inputSchema: { type: "object", properties: { branch: { type: "string" } }, required: ["branch"] } },
-  { name: "salvage", description: "Park a worktree's WIP onto the shared salvage branch for review, without touching the worktree.", inputSchema: { type: "object", properties: { worktree_path: { type: "string" } }, required: ["worktree_path"] } },
+  { name: "salvage", description: "Merge a worktree's WIP (its delta from HEAD) into the shared salvage branch for review, without touching the worktree. Collisions with already-salvaged WIP are committed with conflict markers; the result lists any conflicted files.", inputSchema: { type: "object", properties: { worktree_path: { type: "string" } }, required: ["worktree_path"] } },
 ];
 
 // Reject any worktree_path that isn't an actual worktree of this repo — an
@@ -49,7 +49,13 @@ async function callTool(cwd: string, name: string, args: any): Promise<unknown> 
   }
   if (name === "claim") { const p = String(args.worktree_path); await requireWorktree(repo, p); setClaim(await commonDir(repo), p, String(args.note)); return { ok: true }; }
   if (name === "land") { return ops.land(repo, String(args.branch)); }
-  if (name === "salvage") { const p = String(args.worktree_path); await requireWorktree(repo, p); const c = await ops.salvage(repo, p, "salvage", "salvage: preserve (lumberjack mcp)"); return { ok: true, commit: c }; }
+  if (name === "salvage") {
+    const p = String(args.worktree_path);
+    await requireWorktree(repo, p);
+    const pv = await ops.salvagePreview(repo, p, "salvage");
+    const c = await ops.salvage(repo, p, "salvage", "salvage: preserve (lumberjack mcp)");
+    return { ok: true, commit: c, files: pv.files.length, conflicts: pv.conflicts };
+  }
   throw new Error(`unknown tool: ${name}`);
 }
 

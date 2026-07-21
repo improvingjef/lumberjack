@@ -3,9 +3,11 @@
 // (pure, unit-tested); this file is the git I/O + concurrency around it.
 
 import { execFile } from "child_process";
+import { stat } from "fs/promises";
+import { join } from "path";
 import {
   Group, classify, isAmber, parsePorcelain, parseWorktreeList,
-  worktreeName, parseCount, attentionSort, branchSort,
+  worktreeName, parseCount, attentionSort, branchSort, wipPath,
 } from "./core";
 
 export interface Commit {
@@ -28,6 +30,7 @@ export interface Row {
   dirty: boolean;
   trackedWip: boolean;
   wip: string[];
+  wipTimes: number[]; // per wip line: file mtime (unix seconds), 0 if unstattable (e.g. deleted)
   ahead: number;
   age: number; // days since the newest commit
   group?: Group; // worktree rows only — the section it belongs to
@@ -108,8 +111,14 @@ async function trunkAnd(repo: string, opts: GatherOpts): Promise<{ trunk: string
   return { trunk, trunkShas };
 }
 
+function wipMtimes(cwd: string, lines: string[]): Promise<number[]> {
+  return Promise.all(lines.map(async (l) => {
+    try { return Math.floor((await stat(join(cwd, wipPath(l)))).mtimeMs / 1000); } catch { return 0; }
+  }));
+}
+
 export async function gatherWorktrees(repo: string, opts: GatherOpts = {}): Promise<{ worktrees: Row[]; trunk: string }> {
-  const window = opts.window ?? 14, maxFiles = opts.maxFiles ?? 0, conc = opts.concurrency ?? 16;
+  const window = opts.window ?? 8, maxFiles = opts.maxFiles ?? 0, conc = opts.concurrency ?? 16;
   const entries = parseWorktreeList(await git(repo, ["worktree", "list", "--porcelain"]));
   // a real repo always lists at least its main worktree; zero means the git
   // call failed (bad repoPath, git unavailable) — surface it, don't report empty
@@ -129,6 +138,7 @@ export async function gatherWorktrees(repo: string, opts: GatherOpts = {}): Prom
       kind: "worktree", name: worktreeName(e.path), branch: e.branch, path: e.path,
       // keep ALL wip lines — who_has / tendPlan / --json query this; only the UI truncates
       commits, overflow, dirty: porc.dirty, trackedWip: porc.trackedWip, wip: porc.lines,
+      wipTimes: await wipMtimes(e.path, porc.lines),
       ahead, age, amber: isAmber({ dirty: porc.dirty, age }),
     };
     row.group = classify(row);
@@ -139,7 +149,7 @@ export async function gatherWorktrees(repo: string, opts: GatherOpts = {}): Prom
 }
 
 export async function gatherBranches(repo: string, opts: GatherOpts = {}): Promise<Row[]> {
-  const window = opts.window ?? 14, maxFiles = opts.maxFiles ?? 0, conc = opts.concurrency ?? 16;
+  const window = opts.window ?? 8, maxFiles = opts.maxFiles ?? 0, conc = opts.concurrency ?? 16;
   const { trunk, trunkShas } = await trunkAnd(repo, opts);
   const entries = parseWorktreeList(await git(repo, ["worktree", "list", "--porcelain"]));
   const checkedOut = new Set(entries.map((e) => e.branch).filter((b) => b && b !== "(detached)"));
@@ -152,7 +162,7 @@ export async function gatherBranches(repo: string, opts: GatherOpts = {}): Promi
     ]);
     return {
       kind: "branch" as const, name: b, branch: b, path: "(no worktree)", commits, overflow,
-      dirty: false, trackedWip: false, wip: [], ahead: parseCount(aheadRaw), age, amber: false,
+      dirty: false, trackedWip: false, wip: [], wipTimes: [], ahead: parseCount(aheadRaw), age, amber: false,
     };
   });
   rows.sort(branchSort);

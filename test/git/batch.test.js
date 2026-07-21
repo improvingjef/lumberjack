@@ -35,11 +35,13 @@ test("salvageMany parks every tree's WIP onto one shared branch as history", asy
   const e = makeRepo("master");
   const a = wt(e, "a", "a"); write(a, "README.md", "from-a\n");
   const b = wt(e, "b", "b"); write(b, "README.md", "from-b\n");
-  const n = await ops.salvageMany(e.dir, [
+  const r = await ops.salvageMany(e.dir, [
     { path: a, branch: "a", name: "a" },
     { path: b, branch: "b", name: "b" },
   ], "salvage");
-  assert.equal(n, 2, "both salvaged");
+  assert.equal(r.count, 2, "both salvaged");
+  // both edited README.md differently → the second merge collides and says so
+  assert.deepEqual(r.conflicts, ["b: README.md"], "the collision is reported, attributed to b");
   assert.ok(hasBranch(e.dir, "salvage"), "onto the one shared branch");
   // root + 2 appended commits, chained (not clobbered)
   assert.equal(g(e.dir, "rev-list", "--count", "salvage"), "3");

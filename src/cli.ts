@@ -97,7 +97,7 @@ async function cmdStatus(repo: string, json = false) {
     return;
   }
   const [fleet, loose] = await Promise.all([
-    gatherFleet(repo, { window: 14, maxFiles: 0, includeBranches: false }),
+    gatherFleet(repo, { window: 8, maxFiles: 0, includeBranches: false }),
     looseCount(repo),
   ]);
   const w = fleet.worktrees;
@@ -203,7 +203,7 @@ async function cmdWhoHas(repo: string, file: string, json: boolean) {
 }
 
 async function cmdBranches(repo: string) {
-  const fleet = await gatherFleet(repo, { window: 14, maxFiles: 0, includeBranches: true });
+  const fleet = await gatherFleet(repo, { window: 8, maxFiles: 0, includeBranches: true });
   console.log(`\n${C.bold}loose branches (no worktree): ${fleet.branches.length}${C.reset}\n`);
   for (const r of fleet.branches) console.log(`  ${pad(r.name, 44)} ${squares(r)}  ${statusTag(r)}`);
   console.log("");

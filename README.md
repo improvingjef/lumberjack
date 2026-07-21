@@ -10,10 +10,10 @@ drill into what changed, and helps you fell the deadwood.
 
 Built for humans working *with* agents.
 
-<!-- SCREENSHOT: the three-column fleet view. Put a PNG in media/ and reference
+<!-- SCREENSHOT: the three-column forest view. Put a PNG in media/ and reference
      it with an absolute raw-GitHub URL (the Marketplace won't render a
      repo-relative image path):
-![Lumberjack fleet view](https://raw.githubusercontent.com/improvingjef/lumberjack/main/media/screenshot-fleet.png)
+![Lumberjack forest view](https://raw.githubusercontent.com/improvingjef/lumberjack/main/media/screenshot-fleet.png)
      A short GIF of felling + Undo would sell it even harder. -->
 
 ## Install
@@ -25,7 +25,7 @@ ext install improvingjef.lumberjack
 ```
 
 Then open the 🪓 in the activity bar, or run **Lumberjack: Open Worktree
-Fleet**. By default it surveys the first workspace folder; point it elsewhere
+Forest**. By default it surveys the first workspace folder; point it elsewhere
 with the `lumberjack.repoPath` setting.
 
 **From source** (development):
@@ -45,7 +45,7 @@ A three-column view, colored squares carrying the state at a glance:
 | 🔴 red  | a commit on this branch **not** on master |
 | 🟢 green | a commit that **is** on master (landed) |
 
-- **Column 1 — the fleet.** One row per worktree: name + a wrapping strip of
+- **Column 1 — the forest.** One row per worktree: name + a wrapping strip of
   squares, newest first. A branch 3-ahead reads `red red red green green…`; a
   fully-landed worktree is all green; a live one leads with a blue square.
   Sorted attention-first. Below the worktrees, a **branches — no worktree**
@@ -57,7 +57,7 @@ A three-column view, colored squares carrying the state at a glance:
   *is* the diff viewer and the source viewer, Lumberjack just hands it the
   URIs. WIP files diff against `HEAD`; commit files diff parent-vs-commit.
 
-Live, not a snapshot — hit ↻ (or `Lumberjack: Refresh Fleet`) and it re-reads
+Live, not a snapshot — hit ↻ (or `Lumberjack: Refresh Forest`) and it re-reads
 git.
 
 ## Felling — fearless because it's undoable

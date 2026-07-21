@@ -6,7 +6,7 @@ test("fleetHtml renders a self-contained page with the expected hooks", () => {
   const h = fleetHtml();
   assert.match(h, /<!doctype html>/i);
   assert.match(h, /acquireVsCodeApi/);
-  assert.match(h, /class="col left"/);
+  assert.match(h, /class="col leftcol"/);
   assert.match(h, /class="col mid"/);
   assert.match(h, /class="col right"/);
 });

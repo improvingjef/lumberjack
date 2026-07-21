@@ -1,8 +1,8 @@
 {
   "name": "lumberjack",
   "displayName": "Lumberjack",
-  "description": "A glance tool for your git worktree fleet — colored-square status at a glance, drill into commits and files, with native diff and source.",
-  "version": "0.0.18",
+  "description": "A glance tool for your git worktree forest — colored-square status at a glance, drill into commits and files, with native diff and source.",
+  "version": "0.0.25",
   "publisher": "improvingjef",
   "license": "MIT",
   "icon": "media/icon.png",
@@ -55,18 +55,18 @@
         {
           "type": "webview",
           "id": "lumberjack.fleetView",
-          "name": "Fleet"
+          "name": "Forest"
         }
       ]
     },
     "commands": [
       {
         "command": "lumberjack.open",
-        "title": "Lumberjack: Open Worktree Fleet"
+        "title": "Lumberjack: Open Worktree Forest"
       },
       {
         "command": "lumberjack.refresh",
-        "title": "Lumberjack: Refresh Fleet"
+        "title": "Lumberjack: Refresh Forest"
       },
       {
         "command": "lumberjack.compare",
@@ -79,12 +79,12 @@
         "lumberjack.repoPath": {
           "type": "string",
           "default": "",
-          "description": "Absolute path to the git repo whose worktree fleet to survey. Empty = the first workspace folder."
+          "description": "Absolute path to the git repo whose worktree forest to survey. Empty = the first workspace folder."
         },
         "lumberjack.commitWindow": {
           "type": "number",
-          "default": 14,
-          "description": "How many recent commits to render as squares per row."
+          "default": 8,
+          "description": "How many recent commits to render as squares per row (the WIP square has its own slot on top of this)."
         },
         "lumberjack.salvageBranch": {
           "type": "string",
@@ -99,12 +99,12 @@
         "lumberjack.statusBarRefreshSeconds": {
           "type": "number",
           "default": 20,
-          "description": "How often (seconds) the status-bar tile re-reads the fleet. 0 disables the periodic refresh."
+          "description": "How often (seconds) the status-bar tile re-reads the forest. 0 disables the periodic refresh."
         },
         "lumberjack.warmOnStartup": {
           "type": "boolean",
           "default": true,
-          "description": "Interrogate the fleet in the background at startup so the first open is instant and current."
+          "description": "Interrogate the forest in the background at startup so the first open is instant and current."
         },
         "lumberjack.cacheFreshnessSeconds": {
           "type": "number",

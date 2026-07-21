@@ -6,7 +6,7 @@ import { tmpdir } from "os";
 import { join } from "path";
 import { unlinkSync } from "fs";
 import { trunkBranch } from "./git";
-import { assessSafety } from "./core";
+import { assessSafety, wipPaths } from "./core";
 
 function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -15,6 +15,14 @@ function git(cwd: string, args: string[], env?: NodeJS.ProcessEnv): Promise<stri
       { maxBuffer: 64 * 1024 * 1024, env: env ? { ...process.env, ...env } : process.env },
       (err, out, errout) => (err ? reject(new Error(errout || err.message)) : resolve(out ?? ""))
     );
+  });
+}
+
+// like git(), but a nonzero exit is data, not an error — merge-tree exits 1 on conflicts
+function gitCode(cwd: string, args: string[]): Promise<{ out: string; code: number }> {
+  return new Promise((resolve) => {
+    execFile("git", ["-C", cwd, ...args], { maxBuffer: 64 * 1024 * 1024 }, (e: any, out) =>
+      resolve({ out: out ?? "", code: e ? (typeof e.code === "number" ? e.code : 128) : 0 }));
   });
 }
 
@@ -110,13 +118,23 @@ export async function landMany(repo: string, branches: string[], trunk?: string)
   return { landed, skipped };
 }
 
-/** Park every listed tree's WIP onto one shared review branch; returns how many succeeded. */
-export async function salvageMany(repo: string, trees: TreeRef[], preserveBranch: string): Promise<number> {
-  let n = 0;
+/** Merge every listed tree's WIP onto one shared review branch, in sequence —
+ *  each merge sees the WIP the previous ones just added. Clean ones flow
+ *  through; collisions get markers, and are reported as "name: file". */
+export async function salvageMany(
+  repo: string, trees: TreeRef[], preserveBranch: string
+): Promise<{ count: number; conflicts: string[] }> {
+  let count = 0;
+  const conflicts: string[] = [];
   for (const t of trees) {
-    try { await salvage(repo, t.path, preserveBranch, `salvage: preserve ${t.name} (lumberjack)`); n++; } catch {}
+    try {
+      const pv = await salvagePreview(repo, t.path, preserveBranch);
+      await salvage(repo, t.path, preserveBranch, `salvage: preserve ${t.name} (lumberjack)`);
+      count++;
+      conflicts.push(...pv.conflicts.map((f) => `${t.name}: ${f}`));
+    } catch {}
   }
-  return n;
+  return { count, conflicts };
 }
 
 /** Fell a worktree: capture its HEAD, remove the tree, delete its branch. */
@@ -145,11 +163,50 @@ export async function unfell(repo: string, token: RestoreToken): Promise<void> {
   }
 }
 
+/** The worktree's dirty state as a tree object — via a throwaway index, so the
+ *  live tree, its index, and its branch are untouched. */
+async function wipTreeOf(wtPath: string): Promise<string> {
+  const tmpIndex = join(tmpdir(), `lj-wip-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  try {
+    const env = { GIT_INDEX_FILE: tmpIndex };
+    await git(wtPath, ["add", "-A"], env);
+    return (await git(wtPath, ["write-tree"], env)).trim();
+  } finally {
+    try { unlinkSync(tmpIndex); } catch {}
+  }
+}
+
 /**
- * Snapshot ALL of a worktree's WIP — tracked modifications AND untracked
- * (non-ignored) files — into a single commit appended to `preserveBranch`,
- * WITHOUT touching the worktree. Uses a throwaway index so the live tree and
- * its own branch are untouched. Returns the new commit sha.
+ * Three-way tree merge without touching any worktree. Wants merge-tree's
+ * --merge-base, but that needs git ≥ 2.40 — so instead synthesize the ancestry:
+ * three scaffold commits sharing an explicit base parent make git compute
+ * exactly the base we mean. Works on git ≥ 2.38 (--write-tree). The scaffold
+ * commits are unreferenced and get GC'd. Returns null where merge-tree can't
+ * do --write-tree at all (< 2.38) — callers fall back to a plain snapshot.
+ */
+async function mergeTrees(
+  repo: string, baseTree: string, oursTree: string, theirsTree: string
+): Promise<{ tree: string; conflicts: string[] } | null> {
+  const baseC = (await git(repo, ["commit-tree", baseTree, "-m", "lj salvage scaffold: base"])).trim();
+  const oursC = (await git(repo, ["commit-tree", oursTree, "-p", baseC, "-m", "lj salvage scaffold: ours"])).trim();
+  const theirsC = (await git(repo, ["commit-tree", theirsTree, "-p", baseC, "-m", "lj salvage scaffold: theirs"])).trim();
+  const r = await gitCode(repo, ["merge-tree", "--write-tree", "--name-only", oursC, theirsC]);
+  const lines = r.out.split("\n");
+  if (r.code > 1 || !/^[0-9a-f]{40,64}$/.test((lines[0] || "").trim())) return null;
+  const conflicts: string[] = [];
+  if (r.code === 1) {
+    for (let i = 1; i < lines.length && lines[i].trim(); i++) conflicts.push(lines[i].trim());
+  }
+  return { tree: lines[0].trim(), conflicts };
+}
+
+/**
+ * MERGE a worktree's WIP — tracked modifications AND untracked (non-ignored)
+ * files, as the delta from its own HEAD — into `preserveBranch`, WITHOUT
+ * touching the worktree. The branch accumulates every worktree's WIP woven
+ * together; a genuine collision is committed WITH conflict markers (noted in
+ * the commit message) for review to sort out — salvage's promise is "nothing
+ * is lost", not "this will land clean". Returns the new commit sha.
  */
 export async function salvage(
   repo: string,
@@ -157,30 +214,63 @@ export async function salvage(
   preserveBranch: string,
   message: string
 ): Promise<string> {
-  const tmpIndex = join(tmpdir(), `lj-salvage-${process.pid}-${Date.now()}`);
-  try {
-    const env = { GIT_INDEX_FILE: tmpIndex };
-    await git(wtPath, ["add", "-A"], env); // stage everything into the throwaway index
-    const tree = (await git(wtPath, ["write-tree"], env)).trim();
-    const ref = `refs/heads/${preserveBranch}`;
-    // compare-and-swap loop: read the current tip, build a commit on it, then
-    // update-ref with the expected old value. If a concurrent salvage advanced
-    // the branch between read and write, the CAS fails and we retry — so no
-    // preserved snapshot is ever clobbered.
-    for (let attempt = 0; attempt < 6; attempt++) {
-      let old = "";
-      try { old = (await git(repo, ["rev-parse", "--verify", "--quiet", ref])).trim(); } catch {}
-      const parent = old || (await git(wtPath, ["rev-parse", "HEAD"])).trim(); // first snapshot roots at HEAD
-      const commit = (await git(wtPath, ["commit-tree", tree, "-p", parent, "-m", message])).trim();
-      try {
-        await git(repo, ["update-ref", ref, commit, old]); // old="" ⇒ ref must not exist
-        return commit;
-      } catch { /* another writer moved it — re-read and retry */ }
+  const wipTree = await wipTreeOf(wtPath);
+  const head = (await git(wtPath, ["rev-parse", "HEAD"])).trim();
+  const headTree = (await git(wtPath, ["rev-parse", "HEAD^{tree}"])).trim();
+  const ref = `refs/heads/${preserveBranch}`;
+  // compare-and-swap loop: read the current tip, merge onto it, then
+  // update-ref with the expected old value. If a concurrent salvage advanced
+  // the branch between read and write, the CAS fails and we redo the merge
+  // against the new tip — so no preserved WIP is ever clobbered.
+  for (let attempt = 0; attempt < 6; attempt++) {
+    let old = "";
+    try { old = (await git(repo, ["rev-parse", "--verify", "--quiet", ref])).trim(); } catch {}
+    let tree = wipTree;
+    let note = "";
+    if (old) {
+      const oldTree = (await git(repo, ["rev-parse", `${old}^{tree}`])).trim();
+      const merged = await mergeTrees(repo, headTree, oldTree, wipTree);
+      if (merged) {
+        tree = merged.tree;
+        if (merged.conflicts.length) note = `\n\nconflict markers: ${merged.conflicts.join(", ")}`;
+      } // merged === null → ancient git: legacy whole-tree snapshot
     }
-    throw new Error(`salvage: could not update ${preserveBranch} after retries`);
-  } finally {
-    try { unlinkSync(tmpIndex); } catch {}
+    const parent = old || head; // first salvage roots at HEAD so its diff is the pure WIP delta
+    const commit = (await git(wtPath, ["commit-tree", tree, "-p", parent, "-m", message + note])).trim();
+    try {
+      await git(repo, ["update-ref", ref, commit, old]); // old="" ⇒ ref must not exist
+      return commit;
+    } catch { /* another writer moved it — re-read and retry */ }
   }
+  throw new Error(`salvage: could not update ${preserveBranch} after retries`);
+}
+
+export interface SalvagePreview {
+  branch: string;
+  files: string[]; // every WIP path the salvage would capture
+  conflicts: string[]; // the subset that collides with the salvage tip
+  clean: boolean;
+}
+
+/** The dry run of salvage — same merge, no ref update, nothing written that
+ *  isn't garbage-collectable. On pre-2.38 git the merge can't be simulated;
+ *  the preview reports clean (matching the snapshot fallback, which can't conflict). */
+export async function salvagePreview(
+  repo: string, wtPath: string, preserveBranch: string
+): Promise<SalvagePreview> {
+  const porc = await git(wtPath, ["status", "--porcelain", "--untracked-files=all"]);
+  const files = wipPaths(porc.split("\n").filter(Boolean));
+  let conflicts: string[] = [];
+  let old = "";
+  try { old = (await git(repo, ["rev-parse", "--verify", "--quiet", `refs/heads/${preserveBranch}`])).trim(); } catch {}
+  if (old && files.length) {
+    const wipTree = await wipTreeOf(wtPath);
+    const headTree = (await git(wtPath, ["rev-parse", "HEAD^{tree}"])).trim();
+    const oldTree = (await git(repo, ["rev-parse", `${old}^{tree}`])).trim();
+    const merged = await mergeTrees(repo, headTree, oldTree, wipTree);
+    if (merged) conflicts = merged.conflicts;
+  }
+  return { branch: preserveBranch, files, conflicts, clean: conflicts.length === 0 };
 }
 
 /**

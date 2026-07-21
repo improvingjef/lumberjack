@@ -18,7 +18,7 @@ const SCHEME = "lumberjack";
 function cfg() { return vscode.workspace.getConfiguration("lumberjack"); }
 function salvageBranch(): string { return cfg().get<string>("salvageBranch") || "salvage"; }
 function trunkOpt(): string | undefined { const t = cfg().get<string>("trunk"); return t && t.trim() ? t.trim() : undefined; }
-function commitWindow(): number { return cfg().get<number>("commitWindow") ?? 14; }
+function commitWindow(): number { return cfg().get<number>("commitWindow") ?? 8; }
 
 class GitContentProvider implements vscode.TextDocumentContentProvider {
   async provideTextDocumentContent(uri: vscode.Uri): Promise<string> {
@@ -44,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
   let panel: vscode.WebviewPanel | undefined;
   let sidebar: vscode.WebviewView | undefined;
   let pendingSelect: string | undefined; // worktree path to focus once the panel loads
+  let pendingPreview: any; // a salvage preview to deliver the same way (sidebar → fresh panel handoff)
   const status = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
   status.command = "lumberjack.open";
   context.subscriptions.push(status);
@@ -98,14 +99,20 @@ export function activate(context: vscode.ExtensionContext) {
     if (cached) views.forEach((w) => w.postMessage({ type: "data", repo, fleet: cached, cached: true, select }));
     else views.forEach((w) => w.postMessage({ type: "loading" }));
 
+    const deliverPreview = () => {
+      if (!pendingPreview) return;
+      views.forEach((w) => w.postMessage(pendingPreview));
+      pendingPreview = undefined;
+    };
     // warm cache + not forced → the instant paint IS current; skip the redundant gather
-    if (shouldReuseCache(force, !!cached, cacheAge(repo), freshMs())) { pendingSelect = undefined; return; }
+    if (shouldReuseCache(force, !!cached, cacheAge(repo), freshMs())) { pendingSelect = undefined; deliverPreview(); return; }
 
     try {
       const { worktrees, trunk } = await gatherWorktrees(repo, { window: commitWindow(), maxFiles: 0, trunk: trunkOpt() });
       attachClaims(worktrees, readClaims(await commonDir(repo)));
       views.forEach((w) => w.postMessage({ type: "worktrees", worktrees, select }));
       pendingSelect = undefined;
+      deliverPreview();
       paintStatus({ worktrees, branches: cached?.branches ?? [] });
 
       const branches = await gatherBranches(repo, { window: commitWindow(), maxFiles: 0, trunk });
@@ -115,7 +122,7 @@ export function activate(context: vscode.ExtensionContext) {
       paintStatus({ worktrees, branches });
     } catch (e: any) {
       pendingSelect = undefined;
-      views.forEach((w) => w.postMessage({ type: "error", message: `Couldn't read the fleet: ${e?.message ?? e}` }));
+      views.forEach((w) => w.postMessage({ type: "error", message: `Couldn't read the forest: ${e?.message ?? e}` }));
     }
   }
 
@@ -146,13 +153,28 @@ export function activate(context: vscode.ExtensionContext) {
     view.postMessage({ type: "files", sha, files, overflow });
   }
 
-  // Park a worktree's WIP onto the shared branch for review — no fell.
-  async function salvageOnly(m: any) {
+  // Merge a worktree's WIP onto the shared branch for review — no fell.
+  // Clean merge → just go. Conflicts → hand the webview a badged preview;
+  // its confirm comes back with force=true and commits WITH markers.
+  async function salvageOnly(view: vscode.Webview, m: any, isSidebar = false) {
     const repo = repoRoot();
     if (!repo) return;
     try {
+      const pv = await ops.salvagePreview(repo, m.path, salvageBranch());
+      if (!pv.clean && !m.force) {
+        const msg = { type: "salvagePreview", path: m.path, name: m.name, branch: pv.branch, files: pv.files, conflicts: pv.conflicts };
+        if (isSidebar) {
+          // the compact view has no mid column — hand the preview to the panel
+          const existed = !!panel;
+          await vscode.commands.executeCommand("lumberjack.open");
+          if (existed) panel?.webview.postMessage(msg);
+          else { pendingSelect = m.path; pendingPreview = msg; } // a fresh panel gets it via its load
+        } else view.postMessage(msg);
+        return;
+      }
       const c = await ops.salvage(repo, m.path, salvageBranch(), `salvage: preserve ${m.name} (lumberjack)`);
-      vscode.window.showInformationMessage(`Salvaged ${m.name} → ${salvageBranch()} @ ${c.slice(0, 9)} for review`);
+      const outcome = pv.conflicts.length ? `${pv.conflicts.length} with conflict markers` : "merged clean";
+      vscode.window.showInformationMessage(`Salvaged ${m.name} → ${salvageBranch()} @ ${c.slice(0, 9)} — ${pv.files.length} file(s), ${outcome}`);
       await refresh(targets(), true);
     } catch (e: any) { vscode.window.showErrorMessage(`Salvage failed: ${e.message}`); }
   }
@@ -164,8 +186,9 @@ export function activate(context: vscode.ExtensionContext) {
     const trees = (m.trees ?? []) as ops.TreeRef[];
     if (!trees.length) return;
     const branch = salvageBranch();
-    const n = await ops.salvageMany(repo, trees, branch);
-    vscode.window.showInformationMessage(`Salvaged ${n} worktree(s) → ${branch} for review`);
+    const r = await ops.salvageMany(repo, trees, branch);
+    const conflictNote = r.conflicts.length ? ` — ${r.conflicts.length} conflict(s) committed with markers (${r.conflicts.join(", ")})` : "";
+    vscode.window.showInformationMessage(`Salvaged ${r.count} worktree(s) → ${branch} for review${conflictNote}`);
     await refresh(targets(), true);
   }
 
@@ -195,7 +218,7 @@ export function activate(context: vscode.ExtensionContext) {
     const trees = (m.trees ?? []) as ops.TreeRef[];
     if (!trees.length) return;
     const pick = await vscode.window.showWarningMessage(
-      `Fell all ${trees.length} deadwood?`, { modal: true, detail: trees.map((t) => t.name).join(", ") }, `Fell ${trees.length}`);
+      `Fell ${trees.length} worktree(s)?`, { modal: true, detail: trees.map((t) => t.name).join(", ") }, `Fell ${trees.length}`);
     if (!pick) return;
     const tokens = await ops.fellMany(repo, trees, trunkOpt());
     tokens.forEach((t) => broadcast({ type: "felled", path: t.path }));
@@ -251,13 +274,17 @@ export function activate(context: vscode.ExtensionContext) {
         else pendingSelect = msg.path;
         return;
       }
+      if (msg.type === "title") { // focused panel wears the worktree's name
+        if (!isSidebar && panel) panel.title = msg.name ? `Worktree: ${msg.name}` : "Worktree Forest";
+        return;
+      }
       if (msg.type === "reqFiles") return sendFiles(view, repo, msg.sha);
       if (msg.type === "openSource") return openSource(msg, repo);
       if (msg.type === "diffCommit") return diffCommit(repo, msg);
       if (msg.type === "diffWip") return diffWip(msg);
       if (msg.type === "dive") return dive(msg);
       if (msg.type === "fell") return fellWorktree(msg);
-      if (msg.type === "salvage") return salvageOnly(msg);
+      if (msg.type === "salvage") return salvageOnly(view, msg, isSidebar);
       if (msg.type === "salvageGroup") return salvageGroup(msg);
       if (msg.type === "fellGroup") return fellGroup(msg);
       if (msg.type === "land") return landOne(msg);
@@ -279,7 +306,7 @@ export function activate(context: vscode.ExtensionContext) {
   // ---- editor-area panel ----
   context.subscriptions.push(vscode.commands.registerCommand("lumberjack.open", () => {
     if (panel) { panel.reveal(); return; }
-    panel = vscode.window.createWebviewPanel("lumberjack", "Worktree Fleet", vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
+    panel = vscode.window.createWebviewPanel("lumberjack", "Worktree Forest", vscode.ViewColumn.Active, { enableScripts: true, retainContextWhenHidden: true });
     panel.webview.html = fleetHtml(false);
     panel.webview.onDidReceiveMessage(handler(panel.webview, false), undefined, context.subscriptions);
     panel.onDidDispose(() => (panel = undefined), undefined, context.subscriptions);
